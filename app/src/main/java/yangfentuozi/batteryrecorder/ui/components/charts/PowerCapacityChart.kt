@@ -294,14 +294,28 @@ fun PowerCapacityChart(
             .ifEmpty { activePowerPoints }
     }
 
-    // 计算固定功率轴配置（根据最大功率值自动选择刻度范围）
-    // 拟合曲线不改变刻度范围是预期效果
-    val powerAxisPoints = filteredPoints
-    val powerAxisConfig = remember(powerAxisPoints, fixedPowerAxisMode) {
+    // 计算固定功率轴配置（根据当前功率曲线模式的峰值自动选择刻度范围）。
+    // 趋势模式单独使用 fittedPowerW，避免继续被原始尖峰绑定纵轴。
+    val powerAxisPoints = if (curveVisibility.powerCurveMode == PowerCurveMode.Fitted) {
+        filteredTrendPoints
+    } else {
+        filteredPoints
+    }
+    val powerAxisConfig = remember(powerAxisPoints, fixedPowerAxisMode, curveVisibility.powerCurveMode) {
         val maxObservedAbsW = when (fixedPowerAxisMode) {
-            FixedPowerAxisMode.PositiveOnly -> powerAxisPoints.maxOfOrNull { it.rawPowerW } ?: 0.0
-            FixedPowerAxisMode.NegativeOnly -> kotlin.math.abs(powerAxisPoints.minOfOrNull { it.rawPowerW }
-                ?: 0.0)
+            FixedPowerAxisMode.PositiveOnly -> when (curveVisibility.powerCurveMode) {
+                PowerCurveMode.Fitted -> powerAxisPoints.maxOfOrNull { it.fittedPowerW } ?: 0.0
+                PowerCurveMode.Raw, PowerCurveMode.Hidden -> powerAxisPoints.maxOfOrNull { it.rawPowerW }
+                    ?: 0.0
+            }
+            FixedPowerAxisMode.NegativeOnly -> when (curveVisibility.powerCurveMode) {
+                PowerCurveMode.Fitted -> kotlin.math.abs(
+                    powerAxisPoints.minOfOrNull { it.fittedPowerW } ?: 0.0
+                )
+                PowerCurveMode.Raw, PowerCurveMode.Hidden -> kotlin.math.abs(
+                    powerAxisPoints.minOfOrNull { it.rawPowerW } ?: 0.0
+                )
+            }
         }
         computeFixedPowerAxisConfig(maxObservedAbsW, fixedPowerAxisMode)
     }
@@ -1598,7 +1612,7 @@ private fun computeFixedPowerAxisConfig(
         maxObservedAbsW >= 30 -> 45
         maxObservedAbsW > 15 -> 30
         maxObservedAbsW > 10 -> 15
-        else -> 10
+        else -> 15
     }
 
     val majorStepW = when (axisMaxW) {
