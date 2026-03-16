@@ -343,6 +343,9 @@ fun PowerCapacityChart(
     val selectedPointState = remember(recordStartTime, points, trendPoints) {
         mutableStateOf<RecordDetailChartPoint?>(null)
     }
+    val lastPreparedStateState = remember(recordStartTime, isFullscreen) {
+        mutableStateOf<PreparedChartState?>(null)
+    }
     val appIconClipPath = remember(appIconSizePx, density, layoutDirection) {
         outlineToPath(
             AppShape.icon.createOutline(
@@ -369,13 +372,42 @@ fun PowerCapacityChart(
         appIconSizePx = appIconSizePx,
         density = density
     )
+    val chartPreparationKey = if (isFullscreen) {
+        preparationRequest.copy(
+            visibleStartTime = null,
+            visibleEndTime = null
+        )
+    } else {
+        preparationRequest
+    }
     val chartPreparation = produceState<ChartPreparationResult>(
-        initialValue = ChartPreparationResult.Loading,
-        key1 = preparationRequest
+        initialValue = lastPreparedStateState.value
+            ?.let<PreparedChartState, ChartPreparationResult> { state ->
+                ChartPreparationResult.Ready(state)
+            }
+            ?: ChartPreparationResult.Loading,
+        key1 = chartPreparationKey
     ) {
-        value = ChartPreparationResult.Loading
-        value = withContext(Dispatchers.Default) {
+        if (lastPreparedStateState.value == null) {
+            value = ChartPreparationResult.Loading
+        }
+        val nextResult = withContext(Dispatchers.Default) {
             prepareChartState(preparationRequest)
+        }
+        when (nextResult) {
+            is ChartPreparationResult.Ready -> {
+                lastPreparedStateState.value = nextResult.state
+                value = nextResult
+            }
+            ChartPreparationResult.Empty -> {
+                lastPreparedStateState.value = null
+                value = nextResult
+            }
+            ChartPreparationResult.Loading -> {
+                if (lastPreparedStateState.value == null) {
+                    value = nextResult
+                }
+            }
         }
     }
     val preparedState = when (val preparationResult = chartPreparation.value) {
@@ -405,14 +437,10 @@ fun PowerCapacityChart(
     val selectedPointInfoPadding = 4.dp
     val fullMinTime = preparedState.fullMinTime
     val fullMaxTime = preparedState.fullMaxTime
-    val viewportStart = preparedState.viewportStart
-    val viewportEnd = preparedState.viewportEnd
-    val viewportDurationMs = preparedState.viewportDurationMs
     val isStaticFullscreen = preparedState.isStaticFullscreen
     val renderFilteredPoints = preparedState.renderFilteredPoints
     val renderRawPoints = preparedState.renderRawPoints
     val activePowerPoints = preparedState.activePowerPoints
-    val selectablePoints = preparedState.selectablePoints
     val capacityMarkers = preparedState.capacityMarkers
     val tempMarkerPoints = preparedState.tempMarkerPoints
     val powerAxisConfig = preparedState.powerAxisConfig
@@ -423,11 +451,46 @@ fun PowerCapacityChart(
     val minTemp = preparedState.minTemp
     val maxTemp = preparedState.maxTemp
     val peakDisplay = preparedState.peakDisplay
+    val chartWidthPx = preparedState.chartWidthPx
     val paddingRightPx = preparedState.paddingRightPx
     val fullscreenContentWidthPx = preparedState.fullscreenContentWidthPx
-    val fullscreenContentOffsetPx = preparedState.fullscreenContentOffsetPx
     val normalStaticLayout = preparedState.normalStaticLayout
     val fullscreenStaticLayout = preparedState.fullscreenStaticLayout
+    val viewportStart = if (isFullscreen) {
+        (visibleStartTime ?: fullMinTime).coerceIn(fullMinTime, fullMaxTime)
+    } else {
+        preparedState.viewportStart
+    }
+    val viewportEnd = if (isFullscreen) {
+        (visibleEndTime ?: fullMaxTime).coerceIn(viewportStart, fullMaxTime)
+    } else {
+        preparedState.viewportEnd
+    }
+    val viewportDurationMs = if (isFullscreen) {
+        (viewportEnd - viewportStart).coerceAtLeast(1L)
+    } else {
+        preparedState.viewportDurationMs
+    }
+    val selectablePoints = if (isFullscreen) {
+        activePowerPoints.filter { it.timestamp in viewportStart..viewportEnd }
+            .ifEmpty { activePowerPoints }
+    } else {
+        preparedState.selectablePoints
+    }
+    val fullscreenContentOffsetPx = if (!isFullscreen) {
+        preparedState.fullscreenContentOffsetPx
+    } else {
+        val totalDurationMs = (fullMaxTime - fullMinTime).coerceAtLeast(1L)
+        val fullscreenMaxOffsetPx =
+            (fullscreenContentWidthPx - chartWidthPx).coerceAtLeast(0f)
+        if (fullscreenMaxOffsetPx <= 0f) {
+            0f
+        } else {
+            (((viewportStart - fullMinTime) / totalDurationMs.toDouble()) * fullscreenContentWidthPx)
+                .toFloat()
+                .coerceIn(0f, fullscreenMaxOffsetPx)
+        }
+    }
     val powerValueSelector = remember(
         curveVisibility.powerCurveMode,
         isNegativeMode,
