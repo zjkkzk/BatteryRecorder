@@ -206,7 +206,8 @@ class SettingsViewModel : ViewModel() {
             writeLatencyMs = _writeLatencyMs.value,
             batchSize = _batchSize.value,
             screenOffRecordEnabled = _screenOffRecord.value,
-            segmentDurationMin = _segmentDurationMin.value
+            segmentDurationMin = _segmentDurationMin.value,
+            alwaysPollingScreenStatusEnabled = _alwaysPollingScreenStatusEnabled.value
         )
 
         _gamePackages.value =

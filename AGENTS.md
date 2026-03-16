@@ -338,6 +338,7 @@ shared/src/main/
 - 图表本地展示偏好不写入业务配置
 - 应用图标请求只基于当前视口包名集合触发
 - ROOT 启动统一经过 `RootServerStarter.start(context, source)`
+- `SettingsViewModel.loadSettings()` 中构造 `serverConfig` 时，必须传入 `Config` 的所有字段；新增 `Config` 字段后若遗漏，App 进程重启而 Server 存活时，修改任意其他设置项会通过 `serverConfig.copy(...)` 将遗漏字段以默认值静默推送给 Server
 
 ## 编码约定
 
