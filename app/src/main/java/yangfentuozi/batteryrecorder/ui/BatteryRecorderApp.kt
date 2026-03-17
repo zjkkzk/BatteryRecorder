@@ -49,11 +49,11 @@ fun BatteryRecorderApp(
 
         if (hasCheckedUpdateOnStartup) return@LaunchedEffect
         if (!settingsViewModel.settingsUiState.value.checkUpdateOnStartup) {
-            LoggerX.v<BatteryRecorderAppLogger>("启动更新检测已关闭，跳过检查")
+            LoggerX.d<BatteryRecorderAppLogger>("启动更新检测已关闭，跳过检查")
             return@LaunchedEffect
         }
         hasCheckedUpdateOnStartup = true
-        LoggerX.v<BatteryRecorderAppLogger>("启动更新检测开始，请求最新 release")
+        LoggerX.d<BatteryRecorderAppLogger>("启动更新检测开始，请求最新 release")
 
         val update = UpdateUtils.fetchUpdate() ?: run {
             LoggerX.w<BatteryRecorderAppLogger>("启动更新检测失败，未获取到可用更新信息")
@@ -61,7 +61,7 @@ fun BatteryRecorderApp(
             return@LaunchedEffect
         }
         if (BuildConfig.VERSION_CODE >= update.versionCode) {
-            LoggerX.v<BatteryRecorderAppLogger>(
+            LoggerX.i<BatteryRecorderAppLogger>(
                 "启动更新检测完成，无需更新，remote=${update.versionCode} local=${BuildConfig.VERSION_CODE}"
             )
             return@LaunchedEffect

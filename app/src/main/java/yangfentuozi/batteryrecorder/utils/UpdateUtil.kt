@@ -3,9 +3,9 @@ package yangfentuozi.batteryrecorder.utils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import yangfentuozi.batteryrecorder.shared.util.LoggerX
 import java.net.HttpURLConnection
 import java.net.URL
-import yangfentuozi.batteryrecorder.shared.util.LoggerX
 
 data class AppUpdate(
     val versionName: String,
@@ -42,7 +42,7 @@ object UpdateUtils {
     suspend fun fetchUpdate(): AppUpdate? = withContext(Dispatchers.IO) {
         var connection: HttpURLConnection? = null
         try {
-            LoggerX.i<UpdateUtils>("准备请求 GitHub 最新 release")
+            LoggerX.v<UpdateUtils>("准备请求 GitHub 最新 release")
             val url = URL(GITHUB_API_URL)
             connection = url.openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
@@ -78,7 +78,7 @@ object UpdateUtils {
             }
 
             return@withContext if (versionCode > 0) {
-                LoggerX.i<UpdateUtils>("GitHub 最新 release 解析成功，tag=$tagName versionCode=$versionCode")
+                LoggerX.d<UpdateUtils>("GitHub 最新 release 解析成功，tag=$tagName versionCode=$versionCode")
                 AppUpdate(versionName, versionCode, body, downloadUrl)
             } else {
                 LoggerX.e<UpdateUtils>("解析 versionCode 失败，tag=$tagName")
