@@ -27,7 +27,6 @@ class Monitor(
     private val sendBinder: (() -> Unit),
     private val sampler: Sampler
 ) {
-
     private val iActivityTaskManager =
         IActivityTaskManager.Stub.asInterface(ServiceManager.getService("activity_task"))
     private val iDisplayManager =
@@ -41,6 +40,8 @@ class Monitor(
     }
 
     private var displayCallback: IDisplayManagerCallback? = null
+    @Volatile
+    private var displayCallbackRegistered = false
 
     @Volatile
     private var currForegroundApp: String? = null
@@ -60,11 +61,15 @@ class Monitor(
     var alwaysPollingScreenStatusEnabled: Boolean
         get() = mAlwaysPollingScreenStatusEnabled
         set(value) {
-            if (value != mAlwaysPollingScreenStatusEnabled) {
+            val oldValue = mAlwaysPollingScreenStatusEnabled
+            if (value != oldValue) {
                 mAlwaysPollingScreenStatusEnabled = value
+                LoggerX.d<Monitor>("[屏幕] 配置变更: alwaysPollingScreenStatusEnabled $oldValue -> $value")
                 if (value) {
+                    LoggerX.d<Monitor>("[屏幕] 配置切到轮询模式，清空 DisplayCallback 引用")
                     unregisterDisplayEventCallback()
                 } else {
+                    LoggerX.d<Monitor>("[屏幕] 配置切到回调模式，注册 DisplayCallback")
                     registerDisplayEventCallback()
                 }
             }
@@ -81,13 +86,34 @@ class Monitor(
     private var thread = Thread({
         synchronized(lock) {
             while (!stopped) {
+                if (alwaysPollingScreenStatusEnabled && paused && !screenOffRecord) {
+                    val oldIsInteractive = isInteractive
+                    val latestIsInteractive = iPowerManager.isInteractive
+                    if (oldIsInteractive != latestIsInteractive) {
+                        LoggerX.d<Monitor>("[轮询] 亮屏状态变化: $oldIsInteractive -> $latestIsInteractive")
+                    }
+                    isInteractive = latestIsInteractive
+                    if (!isInteractive) {
+                        lock.wait(recordIntervalMs)
+                        continue
+                    }
+                    LoggerX.d<Monitor>("[采样] 轮询检测到亮屏，恢复采样")
+                    paused = false
+                }
                 try {
                     val timestamp = System.currentTimeMillis()
                     val sample = sampler.sample()
                     val power = sample.voltage * sample.current
                     val status = sample.status
                     val temp = sample.temp
-                    if (alwaysPollingScreenStatusEnabled) isInteractive = iPowerManager.isInteractive
+                    if (alwaysPollingScreenStatusEnabled) {
+                        val oldIsInteractive = isInteractive
+                        val latestIsInteractive = iPowerManager.isInteractive
+                        if (oldIsInteractive != latestIsInteractive) {
+                            LoggerX.d<Monitor>("[轮询] 亮屏状态变化: $oldIsInteractive -> $latestIsInteractive")
+                        }
+                        isInteractive = latestIsInteractive
+                    }
                     writer.write(
                         LineRecord(
                             timestamp,
@@ -120,11 +146,25 @@ class Monitor(
                 }
 
                 if (isInteractive || screenOffRecord) {
+                    if (paused) {
+                        LoggerX.d<Monitor>("[采样] 恢复采样: isInteractive=$isInteractive screenOffRecord=$screenOffRecord")
+                    }
                     paused = false
                     lock.wait(recordIntervalMs)
                 } else {
+                    if (!paused) {
+                        if (alwaysPollingScreenStatusEnabled) {
+                            LoggerX.d<Monitor>("[采样] 暂停采样，等待轮询亮屏: isInteractive=$isInteractive screenOffRecord=$screenOffRecord")
+                        } else {
+                            LoggerX.d<Monitor>("[采样] 暂停采样，等待亮屏事件: isInteractive=$isInteractive screenOffRecord=$screenOffRecord")
+                        }
+                    }
                     paused = true
-                    lock.wait()
+                    if (alwaysPollingScreenStatusEnabled) {
+                        lock.wait(recordIntervalMs)
+                    } else {
+                        lock.wait()
+                    }
                 }
             }
         }
@@ -132,9 +172,13 @@ class Monitor(
     }, "MonitorThread")
 
     fun start() {
+        LoggerX.d<Monitor>("[屏幕] start: alwaysPollingScreenStatusEnabled=$alwaysPollingScreenStatusEnabled screenOffRecord=$screenOffRecord")
         try {
             iActivityTaskManager.registerTaskStackListener(taskStackListener)
-            if (alwaysPollingScreenStatusEnabled) registerDisplayEventCallback()
+            if (!alwaysPollingScreenStatusEnabled) {
+                LoggerX.d<Monitor>("[屏幕] start: 分支命中，注册 DisplayCallback")
+                registerDisplayEventCallback()
+            }
         } catch (e: RemoteException) {
             throw RuntimeException("start: 注册任务栈监听失败", e)
         }
@@ -145,6 +189,7 @@ class Monitor(
             throw RuntimeException("start: 获取当前焦点任务信息失败", e)
         }
         isInteractive = iPowerManager.isInteractive
+        LoggerX.d<Monitor>("[屏幕] start: initial isInteractive=$isInteractive")
 
         thread.start()
         writer.onChangedCurrRecordsFile = {
@@ -164,20 +209,39 @@ class Monitor(
     }
 
     private fun registerDisplayEventCallback() {
+        if (displayCallbackRegistered) {
+            LoggerX.d<Monitor>("[屏幕] registerDisplayEventCallback: 已注册，跳过")
+            return
+        }
+        LoggerX.d<Monitor>("[屏幕] registerDisplayEventCallback")
         displayCallback = object : IDisplayManagerCallback.Stub() {
             @Keep
             override fun onDisplayEvent(displayId: Int, event: Int) {
-                isInteractive = iPowerManager.isInteractive
+                if (alwaysPollingScreenStatusEnabled) {
+                    LoggerX.d<Monitor>("[屏幕] DisplayEvent 已忽略：当前为轮询模式 displayId=$displayId event=$event")
+                    return
+                }
+                val oldIsInteractive = isInteractive
+                val latestIsInteractive = iPowerManager.isInteractive
+                isInteractive = latestIsInteractive
+                LoggerX.d<Monitor>("[屏幕] DisplayEvent: displayId=$displayId event=$event interactive $oldIsInteractive -> $latestIsInteractive paused=$paused")
                 if (isInteractive && paused) {
+                    LoggerX.d<Monitor>("[采样] 收到亮屏事件，唤醒采样线程")
                     notifyLock()
                 }
             }
         }
         iDisplayManager.registerCallback(displayCallback)
+        displayCallbackRegistered = true
     }
 
+    /**
+     * 自实现注销屏幕事件回调，系统服务端检测进程退出自动处理
+     */
     private fun unregisterDisplayEventCallback() {
+        LoggerX.d<Monitor>("[屏幕] unregisterDisplayEventCallback: 清空 DisplayCallback 引用")
         displayCallback = null
+        displayCallbackRegistered = false
     }
 
     fun stop() {
