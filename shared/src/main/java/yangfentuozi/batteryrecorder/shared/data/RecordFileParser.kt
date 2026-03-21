@@ -18,7 +18,7 @@ object RecordFileParser {
             records += record
         }
         LoggerX.d<RecordFileParser>(
-            "[记录解析] 解析完成: file=${file.name} count=${records.size} firstTs=$firstTimestamp lastTs=$lastTimestamp"
+            "parseToList: 解析完成, file=${file.name} count=${records.size} firstTs=$firstTimestamp lastTs=$lastTimestamp"
         )
         return records
     }
@@ -27,7 +27,7 @@ object RecordFileParser {
         file: File,
         onRecord: (LineRecord) -> Unit
     ) {
-        LoggerX.d<RecordFileParser>("[记录解析] 开始解析: file=${file.absolutePath}")
+        LoggerX.d<RecordFileParser>("forEachValidRecord: 开始解析, file=${file.absolutePath}")
         var lineNumber = 0
         var previousParsedTimestamp: Long? = null
 
@@ -89,10 +89,7 @@ object RecordFileParser {
         reason: String
     ) {
         LoggerX.w<RecordFileParser>(
-            "跳过损坏记录 " +
-                "file=${file.absolutePath} " +
-                "line=$lineNumber " +
-                "reason=$reason"
+            "logInvalidLine: 跳过损坏记录, file=${file.absolutePath} line=$lineNumber reason=$reason"
         )
     }
 }

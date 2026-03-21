@@ -77,7 +77,10 @@ class AdvancedWriter(
 
     private fun flushInternal(reason: String) {
         if (batchCount == 0) return
-        LoggerX.d<AdvancedWriter>("flushInternal: $reason，触发写入，数据大小: $batchCount", notWrite = useAndroidLog)
+        LoggerX.d<AdvancedWriter>(
+            "flushInternal: $reason, 触发写入, batchCount=$batchCount",
+            notWrite = useAndroidLog
+        )
         autoRetryWriter.write(buffer)
         buffer.setLength(0)
         batchCount = 0
@@ -98,7 +101,7 @@ class AdvancedWriter(
                         outputStream.close()
                     } catch (e: IOException) {
                         LoggerX.e<AutoRetryStringWriter>(
-                            "retryRunnable: 关闭 OutputStream 失败",
+                            "@retryRunnable: 关闭 OutputStream 失败",
                             tr = e,
                             notWrite = useAndroidLog
                         )
@@ -108,14 +111,14 @@ class AdvancedWriter(
                         outputStream = reopenOutputStream()
                     } catch (e: IOException) {
                         LoggerX.e<AutoRetryStringWriter>(
-                            "retryRunnable: 重新打开 OutputStream 失败，多次重试失败，强行终止",
+                            "@retryRunnable: 重新打开 OutputStream 失败, 多次重试失败, 强行终止",
                             tr = e,
                             notWrite = useAndroidLog
                         )
                         throw RuntimeException()
                     }
                     LoggerX.i<AutoRetryStringWriter>(
-                        "retryRunnable: OutputStream 已重建，继续写入重试",
+                        "@retryRunnable: OutputStream 已重建, 继续写入重试",
                         notWrite = useAndroidLog
                     )
                 }
@@ -128,14 +131,14 @@ class AdvancedWriter(
                     } catch (e: IOException) {
                         if (++retryCount > retryTimes) {
                             LoggerX.e<AutoRetryStringWriter>(
-                                "retryRunnable: 写入 OutputStream 失败，多次重试失败，强行终止",
+                                "@retryRunnable: 写入 OutputStream 失败, 多次重试失败, 强行终止",
                                 tr = e,
                                 notWrite = useAndroidLog
                             )
                             throw RuntimeException()
                         }
                         LoggerX.w<AutoRetryStringWriter>(
-                            "retryRunnable: 写入 OutputStream 失败，准备重试: retryCount=$retryCount/$retryTimes",
+                            "@retryRunnable: 写入 OutputStream 失败, 准备重试: retryCount=$retryCount/$retryTimes",
                             tr = e,
                             notWrite = useAndroidLog
                         )
@@ -207,21 +210,21 @@ class AdvancedWriter(
                                 reopenOutputStream()
                             } catch (reopenErr: IOException) {
                                 LoggerX.e<AutoRetryStringWriter>(
-                                    "drainBufferBlocking: 重新打开 OutputStream 失败，多次重试失败，强行终止",
+                                    "drainBufferBlocking: 重新打开 OutputStream 失败, 多次重试失败, 强行终止",
                                     tr = reopenErr,
                                     notWrite = useAndroidLog
                                 )
                                 throw RuntimeException()
                             }
                             LoggerX.i<AutoRetryStringWriter>(
-                                "drainBufferBlocking: OutputStream 已重建，继续写入重试",
+                                "drainBufferBlocking: OutputStream 已重建, 继续写入重试",
                                 notWrite = useAndroidLog
                             )
                             localRetryCount = 0
                             continue
                         }
                         LoggerX.w<AutoRetryStringWriter>(
-                            "drainBufferBlocking: 写入 OutputStream 失败，准备重试: retryCount=$localRetryCount/$retryTimes",
+                            "drainBufferBlocking: 写入 OutputStream 失败, 准备重试: retryCount=$localRetryCount/$retryTimes",
                             tr = e,
                             notWrite = useAndroidLog
                         )

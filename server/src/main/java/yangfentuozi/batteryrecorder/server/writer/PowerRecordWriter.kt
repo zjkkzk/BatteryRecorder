@@ -43,12 +43,12 @@ class PowerRecordWriter(
         fun makeSureExists(file: File) {
             if (!file.exists()) {
                 if (!file.mkdirs()) {
-                    LoggerX.e<PowerRecordWriter>("[写盘] 创建功率数据目录失败: ${file.absolutePath}")
+                    LoggerX.e<PowerRecordWriter>("makeSureExists: 创建功率数据目录失败, dir=${file.absolutePath}")
                     throw IOException("makeSureExists: 创建功率数据文件夹: ${file.absolutePath} 失败")
                 }
-                LoggerX.d<PowerRecordWriter>("[写盘] 创建功率数据目录: ${file.absolutePath}")
+                LoggerX.d<PowerRecordWriter>("makeSureExists: 创建功率数据目录, dir=${file.absolutePath}")
             } else if (!file.isDirectory()) {
-                LoggerX.e<PowerRecordWriter>("[写盘] 功率数据路径不是目录: ${file.absolutePath}")
+                LoggerX.e<PowerRecordWriter>("makeSureExists: 功率数据路径不是目录, path=${file.absolutePath}")
                 throw IOException("makeSureExists: 功率数据文件夹: ${file.absolutePath} 不是一个文件夹")
             }
             fixFileOwner(file)
@@ -60,7 +60,7 @@ class PowerRecordWriter(
 
     fun write(record: LineRecord) {
         if (lastStatus != record.status) {
-            LoggerX.d<PowerRecordWriter>("[写盘] 电池状态切换: $lastStatus -> ${record.status}")
+            LoggerX.d<PowerRecordWriter>("write: 电池状态切换, $lastStatus -> ${record.status}")
         }
         when (record.status) {
             Charging -> {
@@ -136,7 +136,7 @@ class PowerRecordWriter(
                     if (justChangedStatus) {
                         closeCurrentSegment()
                     }
-                    LoggerX.v<BaseDelayedRecordWriter>("[写盘] 跳过状态切换瞬时干扰数据: dir=${dir.name}")
+                    LoggerX.v<BaseDelayedRecordWriter>("write: 跳过状态切换瞬时干扰数据, dir=${dir.name}")
                     return
                 }
             }
@@ -147,14 +147,14 @@ class PowerRecordWriter(
             writer!!.appendLine(record)
 
             if (startedNewSegment) {
-                LoggerX.d<BaseDelayedRecordWriter>("[写盘] 新分段已创建，立即落盘: file=${segmentFile?.name}")
+                LoggerX.d<BaseDelayedRecordWriter>("write: 新分段已创建, 立即落盘, file=${segmentFile?.name}")
                 writer!!.flushNow()
                 return
             }
 
             writer!!.onEnqueued()
             if (justChangedStatus) {
-                LoggerX.d<BaseDelayedRecordWriter>("[写盘] 当前记录文件已切换: file=${segmentFile?.name}")
+                LoggerX.d<BaseDelayedRecordWriter>("write: 当前记录文件已切换, file=${segmentFile?.name}")
                 onChangedCurrRecordsFile?.invoke()
             }
         }
@@ -174,7 +174,7 @@ class PowerRecordWriter(
                 val file = File(dir, fileName)
                 segmentFile = file
                 LoggerX.d<BaseDelayedRecordWriter>(
-                    "[写盘] 创建新分段: dir=${dir.name} file=${file.name} justChangedStatus=$justChangedStatus"
+                    "startNewSegmentIfNeed: 创建新分段, dir=${dir.name} file=${file.name} justChangedStatus=$justChangedStatus"
                 )
 
                 val openOutputStream: (() -> OutputStream) = {
@@ -217,11 +217,11 @@ class PowerRecordWriter(
                 try {
                     writer!!.close()
                 } catch (e: IOException) {
-                    LoggerX.e<BaseDelayedRecordWriter>("[写盘] 关闭分段文件失败", tr = e)
+                    LoggerX.e<BaseDelayedRecordWriter>("closeCurrentSegment: 关闭分段文件失败", tr = e)
                 }
                 writer = null
                 if (needDeleteSegment(System.currentTimeMillis())) {
-                    LoggerX.v<BaseDelayedRecordWriter>("[写盘] 删除短分段: file=${segmentFile?.name}")
+                    LoggerX.v<BaseDelayedRecordWriter>("closeCurrentSegment: 删除短分段, file=${segmentFile?.name}")
                     segmentFile!!.delete()
                 }
                 segmentFile = null

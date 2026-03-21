@@ -30,13 +30,13 @@ static int init_file_cache() {
 
     g_cache.voltage_fp = fopen("/sys/class/power_supply/battery/voltage_now", "r");
     if (!g_cache.voltage_fp) {
-        LOGE("Failed to open voltage_now");
+        LOGE("%s: Failed to open voltage_now", __func__);
         return 0;
     }
 
     g_cache.current_fp = fopen("/sys/class/power_supply/battery/current_now", "r");
     if (!g_cache.current_fp) {
-        LOGE("Failed to open current_now");
+        LOGE("%s: Failed to open current_now", __func__);
         fclose(g_cache.voltage_fp);
         g_cache.voltage_fp = NULL;
         return 0;
@@ -44,7 +44,7 @@ static int init_file_cache() {
 
     g_cache.capacity_fp = fopen("/sys/class/power_supply/battery/capacity", "r");
     if (!g_cache.capacity_fp) {
-        LOGE("Failed to open capacity");
+        LOGE("%s: Failed to open capacity", __func__);
         fclose(g_cache.voltage_fp);
         g_cache.current_fp = NULL;
         fclose(g_cache.current_fp);
@@ -53,7 +53,7 @@ static int init_file_cache() {
 
     g_cache.status_fp = fopen("/sys/class/power_supply/battery/status", "r");
     if (!g_cache.status_fp) {
-        LOGE("Failed to open status");
+        LOGE("%s: Failed to open status", __func__);
         fclose(g_cache.voltage_fp);
         g_cache.voltage_fp = NULL;
         fclose(g_cache.current_fp);
@@ -65,7 +65,7 @@ static int init_file_cache() {
 
     g_cache.temp_fp = fopen("/sys/class/power_supply/battery/temp", "r");
     if (!g_cache.temp_fp) {
-        LOGE("Failed to open status");
+        LOGE("%s: Failed to open temp", __func__);
         fclose(g_cache.voltage_fp);
         g_cache.voltage_fp = NULL;
         fclose(g_cache.current_fp);
@@ -161,7 +161,7 @@ static int register_native_methods(JNIEnv *env) {
     const char *class_name = "yangfentuozi/batteryrecorder/server/recorder/sampler/SysfsSampler";
     jclass clazz = (*env)->FindClass(env, class_name);
     if (!clazz) {
-        LOGE("Failed to find class %s", class_name);
+        LOGE("%s: Failed to find class %s", __func__, class_name);
         return JNI_FALSE;
     }
 
@@ -175,7 +175,7 @@ static int register_native_methods(JNIEnv *env) {
     };
 
     if ((*env)->RegisterNatives(env, clazz, methods, sizeof(methods) / sizeof(methods[0])) < 0) {
-        LOGE("RegisterNatives failed for %s", class_name);
+        LOGE("%s: RegisterNatives failed for %s", __func__, class_name);
         return JNI_FALSE;
     }
 
@@ -185,7 +185,7 @@ static int register_native_methods(JNIEnv *env) {
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved __attribute__((unused))) {
     JNIEnv *env = NULL;
     if ((*vm)->GetEnv(vm, (void **) &env, JNI_VERSION_1_6) != JNI_OK) {
-        LOGE("GetEnv failed");
+        LOGE("%s: GetEnv failed", __func__);
         return JNI_ERR;
     }
 

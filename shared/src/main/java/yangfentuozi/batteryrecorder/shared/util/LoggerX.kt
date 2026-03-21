@@ -27,7 +27,7 @@ object LoggerX {
             writer = if (value == null) null else try {
                 LogWriter(value)
             } catch (e: IOException) {
-                Log.e(this::class.java.simpleName, "init writer err", e)
+                Log.e(this::class.java.simpleName, "logDir: 初始化 LogWriter 失败", e)
                 null
             }
         }
@@ -187,7 +187,7 @@ object LoggerX {
                     }
                 } catch (e: Exception) {
                     e<LogWriter>(
-                        "cleanupExpiredLogs: 清理过期日志文件失败",
+                        "@cleanupRunnable: 清理过期日志文件失败",
                         tr = e,
                         notWrite = true
                     )
@@ -235,7 +235,7 @@ object LoggerX {
                         writer?.flushNow()
                     }
                 } catch (e: Exception) {
-                    e<LogWriter>("writing error", tr = e)
+                    e<LogWriter>("write: 写入日志失败", tr = e, notWrite = true)
                 }
             }
         }
@@ -277,7 +277,7 @@ object LoggerX {
                     it.flushNow()
                     it.close()
                 } catch (e: Exception) {
-                    e<LogWriter>("closeWriter error", e, notWrite = true)
+                    e<LogWriter>("closeWriter: 关闭 AdvancedWriter 失败", tr = e, notWrite = true)
                 } finally {
                     writer = null
                 }

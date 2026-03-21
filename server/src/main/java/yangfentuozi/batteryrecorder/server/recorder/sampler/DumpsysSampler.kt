@@ -17,7 +17,7 @@ class DumpsysSampler : Sampler {
         )
 
     init {
-        LoggerX.d<DumpsysSampler>("[采样] 启用 Dumpsys 回退采样器")
+        LoggerX.d<DumpsysSampler>("init: 启用 Dumpsys 回退采样器")
     }
 
     override fun sample(): Sampler.BatteryData {
@@ -31,7 +31,7 @@ class DumpsysSampler : Sampler {
             try {
                 batteryService.dump(writeSide.fileDescriptor, arrayOf())
             } catch (e: Exception) {
-                LoggerX.e<DumpsysSampler>("sample@Thread: dump 失败", tr = e)
+                LoggerX.e<DumpsysSampler>("@dumpThread: dump 失败", tr = e)
             } finally {
                 writeSide.close()
             }
@@ -69,7 +69,7 @@ class DumpsysSampler : Sampler {
                 }
             }
         } catch (e: Exception) {
-            LoggerX.e<DumpsysSampler>("[采样] 读取 dump 输出流失败", tr = e)
+            LoggerX.e<DumpsysSampler>("sample: 读取 dump 输出流失败", tr = e)
         } finally {
             readSide.close()
         }
