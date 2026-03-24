@@ -122,11 +122,17 @@ class Monitor(
                         for (i in 0..<n) {
                             try {
                                 val callback = callbacks.getBroadcastItem(i)
-                                writeResult.changedRecordsFile?.let { recordsFile ->
-                                    callback.onChangedCurrRecordsFile(recordsFile)
-                                }
-                                if (writeResult.accepted) {
-                                    callback.onRecord(timestamp, power, status, temp)
+                                when (writeResult) {
+                                    is PowerRecordWriter.WriteResult.Changed -> {
+                                        callback.onChangedCurrRecordsFile(writeResult.recordsFile)
+                                        callback.onRecord(timestamp, power, status, temp)
+                                    }
+
+                                    PowerRecordWriter.WriteResult.Accepted -> {
+                                        callback.onRecord(timestamp, power, status, temp)
+                                    }
+
+                                    PowerRecordWriter.WriteResult.Rejected -> Unit
                                 }
                             } catch (e: RemoteException) {
                                 LoggerX.e<Monitor>(
