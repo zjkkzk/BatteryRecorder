@@ -18,6 +18,7 @@ import yangfentuozi.batteryrecorder.shared.config.SharedSettings
 import yangfentuozi.batteryrecorder.shared.config.dataclass.AppSettings
 import yangfentuozi.batteryrecorder.shared.config.dataclass.ServerSettings
 import yangfentuozi.batteryrecorder.shared.config.dataclass.StatisticsSettings
+import yangfentuozi.batteryrecorder.shared.config.dataclass.UpdateChannel
 import yangfentuozi.batteryrecorder.shared.util.LoggerX
 
 private const val TAG = "SettingsViewModel"
@@ -130,6 +131,15 @@ class SettingsViewModel : ViewModel() {
                 SettingsConstants.checkUpdateOnStartup.writeToSP(this, enabled)
             }
             _appSettings.value = _appSettings.value.copy(checkUpdateOnStartup = enabled)
+        }
+    }
+
+    fun setUpdateChannel(channel: UpdateChannel) {
+        viewModelScope.launch {
+            prefs.edit {
+                SettingsConstants.updateChannel.writeToSP(this, channel)
+            }
+            _appSettings.value = _appSettings.value.copy(updateChannel = channel)
         }
     }
 

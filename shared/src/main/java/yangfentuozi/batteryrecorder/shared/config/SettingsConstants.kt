@@ -1,6 +1,7 @@
 package yangfentuozi.batteryrecorder.shared.config
 
 import yangfentuozi.batteryrecorder.shared.util.LoggerX
+import yangfentuozi.batteryrecorder.shared.config.dataclass.UpdateChannel
 
 object SettingsConstants {
     const val PREFS_NAME = "app_settings"
@@ -11,6 +12,14 @@ object SettingsConstants {
                 LoggerX.LogLevel.entries.firstOrNull { it.priority == value }
 
             override fun toValue(value: LoggerX.LogLevel): Int = value.priority
+        }
+
+    private val updateChannelConverter =
+        object : EnumConfigConverter<UpdateChannel> {
+            override fun fromValue(value: Int): UpdateChannel? =
+                UpdateChannel.fromPersistedValue(value)
+
+            override fun toValue(value: UpdateChannel): Int = value.persistedValue
         }
 
     // server
@@ -129,6 +138,14 @@ object SettingsConstants {
         BooleanConfigItem(
             key = "check_update_on_startup",
             def = true
+        )
+
+    /** 启动更新检测通道 */
+    val updateChannel =
+        EnumConfigItem(
+            key = "update_channel",
+            def = UpdateChannel.Stable,
+            converter = updateChannelConverter
         )
 
     /** 是否启用首页/应用预测使用的加权算法 */

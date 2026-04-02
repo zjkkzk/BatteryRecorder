@@ -45,6 +45,7 @@ object SharedSettings {
     fun readAppSettings(prefs: SharedPreferences): AppSettings =
         AppSettings(
             checkUpdateOnStartup = SettingsConstants.checkUpdateOnStartup.readFromSP(prefs),
+            updateChannel = SettingsConstants.updateChannel.readFromSP(prefs),
             dualCellEnabled = SettingsConstants.dualCellEnabled.readFromSP(prefs),
             dischargeDisplayPositive = SettingsConstants.dischargeDisplayPositive.readFromSP(prefs),
             calibrationValue = SettingsConstants.calibrationValue.readFromSP(prefs),
@@ -162,6 +163,7 @@ object SharedSettings {
 
     private fun Editor.writeAppSettings(settings: AppSettings) {
         SettingsConstants.checkUpdateOnStartup.writeToSP(this, settings.checkUpdateOnStartup)
+        SettingsConstants.updateChannel.writeToSP(this, settings.updateChannel)
         SettingsConstants.dualCellEnabled.writeToSP(this, settings.dualCellEnabled)
         SettingsConstants.dischargeDisplayPositive.writeToSP(this, settings.dischargeDisplayPositive)
         SettingsConstants.calibrationValue.writeToSP(this, settings.calibrationValue)

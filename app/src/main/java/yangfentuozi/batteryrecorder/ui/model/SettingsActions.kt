@@ -1,6 +1,7 @@
 package yangfentuozi.batteryrecorder.ui.model
 
 import yangfentuozi.batteryrecorder.shared.util.LoggerX
+import yangfentuozi.batteryrecorder.shared.config.dataclass.UpdateChannel
 
 data class CalibrationActions(
     val setDualCellEnabled: (Boolean) -> Unit,
@@ -32,6 +33,7 @@ data class PredictionActions(
 
 data class SettingsActions(
     val setCheckUpdateOnStartup: (Boolean) -> Unit,
+    val setUpdateChannel: (UpdateChannel) -> Unit,
     val calibration: CalibrationActions,
     val server: ServerActions,
     val log: LogActions,

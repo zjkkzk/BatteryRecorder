@@ -50,6 +50,7 @@ fun SettingsScreen(
     val actions = remember(settingsViewModel) {
         SettingsActions(
             setCheckUpdateOnStartup = settingsViewModel::setCheckUpdateOnStartup,
+            setUpdateChannel = settingsViewModel::setUpdateChannel,
             calibration = CalibrationActions(
                 setDualCellEnabled = settingsViewModel::setDualCellEnabled,
                 setDischargeDisplayPositiveEnabled = settingsViewModel::setDischargeDisplayPositiveEnabled,
@@ -83,6 +84,7 @@ fun SettingsScreen(
     val settingsState = remember(appSettings, statisticsSettings, serverSettings) {
         SettingsUiState(
             checkUpdateOnStartup = appSettings.checkUpdateOnStartup,
+            updateChannel = appSettings.updateChannel,
             dualCellEnabled = appSettings.dualCellEnabled,
             dischargeDisplayPositive = appSettings.dischargeDisplayPositive,
             calibrationValue = appSettings.calibrationValue,
