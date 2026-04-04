@@ -46,9 +46,7 @@ object SharedSettings {
         AppSettings(
             checkUpdateOnStartup = SettingsConstants.checkUpdateOnStartup.readFromSP(prefs),
             updateChannel = SettingsConstants.updateChannel.readFromSP(prefs),
-            dualCellEnabled = SettingsConstants.dualCellEnabled.readFromSP(prefs),
             dischargeDisplayPositive = SettingsConstants.dischargeDisplayPositive.readFromSP(prefs),
-            calibrationValue = SettingsConstants.calibrationValue.readFromSP(prefs),
             rootBootAutoStartEnabled = SettingsConstants.rootBootAutoStartEnabled.readFromSP(prefs)
         )
 
@@ -97,6 +95,18 @@ object SharedSettings {
      */
     fun readServerSettings(prefs: SharedPreferences): ServerSettings =
         ServerSettings(
+            notificationEnabled = prefs.getBoolean(
+                SettingsConstants.notificationEnabled.key,
+                SettingsConstants.notificationEnabled.def
+            ),
+            dualCellEnabled = prefs.getBoolean(
+                SettingsConstants.dualCellEnabled.key,
+                SettingsConstants.dualCellEnabled.def
+            ),
+            calibrationValue = prefs.getInt(
+                SettingsConstants.calibrationValue.key,
+                SettingsConstants.calibrationValue.def
+            ),
             recordIntervalMs = prefs.getLong(
                 SettingsConstants.recordIntervalMs.key,
                 SettingsConstants.recordIntervalMs.def
@@ -164,13 +174,14 @@ object SharedSettings {
     private fun Editor.writeAppSettings(settings: AppSettings) {
         SettingsConstants.checkUpdateOnStartup.writeToSP(this, settings.checkUpdateOnStartup)
         SettingsConstants.updateChannel.writeToSP(this, settings.updateChannel)
-        SettingsConstants.dualCellEnabled.writeToSP(this, settings.dualCellEnabled)
         SettingsConstants.dischargeDisplayPositive.writeToSP(this, settings.dischargeDisplayPositive)
-        SettingsConstants.calibrationValue.writeToSP(this, settings.calibrationValue)
         SettingsConstants.rootBootAutoStartEnabled.writeToSP(this, settings.rootBootAutoStartEnabled)
     }
 
     private fun Editor.writeServerSettings(settings: ServerSettings) {
+        putBoolean(SettingsConstants.notificationEnabled.key, settings.notificationEnabled)
+        putBoolean(SettingsConstants.dualCellEnabled.key, settings.dualCellEnabled)
+        putInt(SettingsConstants.calibrationValue.key, settings.calibrationValue)
         putLong(SettingsConstants.recordIntervalMs.key, settings.recordIntervalMs)
         putInt(SettingsConstants.batchSize.key, settings.batchSize)
         putLong(SettingsConstants.writeLatencyMs.key, settings.writeLatencyMs)

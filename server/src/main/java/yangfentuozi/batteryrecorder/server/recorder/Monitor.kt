@@ -73,7 +73,14 @@ class Monitor(
     var notificationUtil: NotificationUtil? = null
 
     @Volatile
-    var calibrationValue: Double = (if (SettingsConstants.dualCellEnabled.def) 2.0 else 1.0) / SettingsConstants.calibrationValue.def
+    var notificationPowerMultiplier: Double =
+        computeNotificationPowerMultiplier(
+            dualCellEnabled = SettingsConstants.dualCellEnabled.def,
+            calibrationValue = SettingsConstants.calibrationValue.def
+        )
+
+    @Volatile
+    private var notificationEnabled = SettingsConstants.notificationEnabled.def
 
     private var mAlwaysPollingScreenStatusEnabled: Boolean =
         SettingsConstants.alwaysPollingScreenStatusEnabled.def
@@ -132,7 +139,9 @@ class Monitor(
                         sample.current
                     )
                     val writeResult = writer.write(record)
-                    notificationUtil?.updateNotification(NotificationInfo(power * calibrationValue, temp))
+                    notificationUtil?.updateNotification(
+                        NotificationInfo(power * notificationPowerMultiplier, temp)
+                    )
 
                     callbackHandler.post {
                         // 回调 app：先同步当前记录文件切换，再下发已进入当前记录的实时样本。
@@ -293,7 +302,7 @@ class Monitor(
     }
 
     // 耗时操作
-    fun enableNotification() {
+    private fun enableNotification() {
         lock.withLock {
             notificationUtil?.close()
             notificationUtil = if (Os.getuid() == 0) RemoteNotificationUtil()
@@ -304,9 +313,31 @@ class Monitor(
         }
     }
 
-    fun disableNotification() {
+    private fun disableNotification() {
         lock.withLock {
             notificationUtil?.close()
+            notificationUtil = null
+            notificationEnabled = false
+        }
+    }
+
+    fun setNotificationEnabled(enabled: Boolean) {
+        if (enabled == notificationEnabled) return
+        if (enabled) {
+            enableNotification()
+            notificationEnabled = true
+        } else {
+            disableNotification()
+        }
+    }
+
+    companion object {
+        private fun computeNotificationPowerMultiplier(
+            dualCellEnabled: Boolean,
+            calibrationValue: Int
+        ): Double {
+            val cellMultiplier = if (dualCellEnabled) 2.0 else 1.0
+            return cellMultiplier / calibrationValue
         }
     }
 }

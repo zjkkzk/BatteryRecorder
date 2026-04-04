@@ -49,11 +49,11 @@ class SettingsViewModel : ViewModel() {
     val initialized: StateFlow<Boolean> = _initialized.asStateFlow()
 
     val dualCellEnabled: StateFlow<Boolean> =
-        appSettings.map { it.dualCellEnabled }
+        serverSettings.map { it.dualCellEnabled }
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.Eagerly,
-                initialValue = AppSettings().dualCellEnabled
+                initialValue = ServerSettings().dualCellEnabled
             )
 
     val dischargeDisplayPositive: StateFlow<Boolean> =
@@ -65,11 +65,11 @@ class SettingsViewModel : ViewModel() {
             )
 
     val calibrationValue: StateFlow<Int> =
-        appSettings.map { it.calibrationValue }
+        serverSettings.map { it.calibrationValue }
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.Eagerly,
-                initialValue = AppSettings().calibrationValue
+                initialValue = ServerSettings().calibrationValue
             )
 
     val recordIntervalMs: StateFlow<Long> =
@@ -121,7 +121,7 @@ class SettingsViewModel : ViewModel() {
 
         LoggerX.d(
             TAG,
-            "[设置] loadSettings 完成: intervalMs=${currentServerSettings.recordIntervalMs} writeLatencyMs=${currentServerSettings.writeLatencyMs} batchSize=${currentServerSettings.batchSize} screenOffRecord=${currentServerSettings.screenOffRecordEnabled} polling=${currentServerSettings.alwaysPollingScreenStatusEnabled} logLevel=${currentServerSettings.logLevel}"
+            "[设置] loadSettings 完成: notification=${currentServerSettings.notificationEnabled} dualCell=${currentServerSettings.dualCellEnabled} calibration=${currentServerSettings.calibrationValue} intervalMs=${currentServerSettings.recordIntervalMs} writeLatencyMs=${currentServerSettings.writeLatencyMs} batchSize=${currentServerSettings.batchSize} screenOffRecord=${currentServerSettings.screenOffRecordEnabled} polling=${currentServerSettings.alwaysPollingScreenStatusEnabled} logLevel=${currentServerSettings.logLevel}"
         )
     }
 
@@ -144,11 +144,10 @@ class SettingsViewModel : ViewModel() {
     }
 
     fun setDualCellEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            prefs.edit {
-                SettingsConstants.dualCellEnabled.writeToSP(this, enabled)
-            }
-            _appSettings.value = _appSettings.value.copy(dualCellEnabled = enabled)
+        updateServerSettings(
+            message = "[设置] 更新双电芯模式并准备下发: enabled=$enabled"
+        ) { current ->
+            current.copy(dualCellEnabled = enabled)
         }
     }
 
@@ -163,11 +162,18 @@ class SettingsViewModel : ViewModel() {
 
     fun setCalibrationValue(value: Int) {
         val finalValue = SettingsConstants.calibrationValue.coerce(value)
-        viewModelScope.launch {
-            prefs.edit {
-                SettingsConstants.calibrationValue.writeToSP(this, finalValue)
-            }
-            _appSettings.value = _appSettings.value.copy(calibrationValue = finalValue)
+        updateServerSettings(
+            message = "[设置] 更新校准值并准备下发: calibration=$finalValue"
+        ) { current ->
+            current.copy(calibrationValue = finalValue)
+        }
+    }
+
+    fun setNotificationEnabled(enabled: Boolean) {
+        updateServerSettings(
+            message = "[设置] 更新实时通知并准备下发: enabled=$enabled"
+        ) { current ->
+            current.copy(notificationEnabled = enabled)
         }
     }
 

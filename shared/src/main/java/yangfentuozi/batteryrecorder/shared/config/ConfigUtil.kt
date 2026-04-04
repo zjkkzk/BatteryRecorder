@@ -53,6 +53,9 @@ object ConfigUtil {
                 parser.setInput(fis, "UTF-8")
 
                 var eventType = parser.eventType
+                var notificationEnabled: Boolean? = null
+                var dualCellEnabled: Boolean? = null
+                var calibrationValue: Int? = null
                 var recordIntervalMs: Long? = null
                 var batchSize: Int? = null
                 var writeLatencyMs: Long? = null
@@ -69,6 +72,15 @@ object ConfigUtil {
                         val trimmedValue = valueAttr?.trim()
 
                         when (nameAttr) {
+                            SettingsConstants.notificationEnabled.key ->
+                                notificationEnabled = trimmedValue?.toBooleanStrictOrNull()
+
+                            SettingsConstants.dualCellEnabled.key ->
+                                dualCellEnabled = trimmedValue?.toBooleanStrictOrNull()
+
+                            SettingsConstants.calibrationValue.key ->
+                                calibrationValue = trimmedValue?.toIntOrNull()
+
                             SettingsConstants.recordIntervalMs.key ->
                                 recordIntervalMs = trimmedValue?.toLongOrNull()
 
@@ -99,6 +111,12 @@ object ConfigUtil {
                 }
 
                 val settings = ServerSettings(
+                    notificationEnabled =
+                        notificationEnabled ?: SettingsConstants.notificationEnabled.def,
+                    dualCellEnabled =
+                        dualCellEnabled ?: SettingsConstants.dualCellEnabled.def,
+                    calibrationValue =
+                        calibrationValue ?: SettingsConstants.calibrationValue.def,
                     recordIntervalMs = recordIntervalMs ?: SettingsConstants.recordIntervalMs.def,
                     batchSize = batchSize ?: SettingsConstants.batchSize.def,
                     writeLatencyMs = writeLatencyMs ?: SettingsConstants.writeLatencyMs.def,
@@ -163,7 +181,7 @@ object ConfigUtil {
     private fun logServerSettings(source: String, settings: ServerSettings) {
         LoggerX.d(
             TAG,
-            "$source: intervalMs=${settings.recordIntervalMs} batchSize=${settings.batchSize} writeLatencyMs=${settings.writeLatencyMs} screenOffRecord=${settings.screenOffRecordEnabled} polling=${settings.alwaysPollingScreenStatusEnabled} logLevel=${settings.logLevel}"
+            "$source: notification=${settings.notificationEnabled} dualCell=${settings.dualCellEnabled} calibration=${settings.calibrationValue} intervalMs=${settings.recordIntervalMs} batchSize=${settings.batchSize} writeLatencyMs=${settings.writeLatencyMs} screenOffRecord=${settings.screenOffRecordEnabled} polling=${settings.alwaysPollingScreenStatusEnabled} logLevel=${settings.logLevel}"
         )
     }
 }

@@ -1,7 +1,7 @@
 package yangfentuozi.batteryrecorder.ui.model
 
-import yangfentuozi.batteryrecorder.shared.util.LoggerX
 import yangfentuozi.batteryrecorder.shared.config.dataclass.UpdateChannel
+import yangfentuozi.batteryrecorder.shared.util.LoggerX
 
 data class CalibrationActions(
     val setDualCellEnabled: (Boolean) -> Unit,
@@ -10,6 +10,7 @@ data class CalibrationActions(
 )
 
 data class ServerActions(
+    val setNotificationEnabled: (Boolean) -> Unit,
     val setRecordIntervalMs: (Long) -> Unit,
     val setWriteLatencyMs: (Long) -> Unit,
     val setBatchSize: (Int) -> Unit,

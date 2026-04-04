@@ -43,6 +43,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
+import yangfentuozi.batteryrecorder.R
 import yangfentuozi.batteryrecorder.ipc.Service
 import yangfentuozi.batteryrecorder.server.recorder.IRecordListener
 import yangfentuozi.batteryrecorder.shared.data.BatteryStatus
@@ -62,7 +63,6 @@ import yangfentuozi.batteryrecorder.ui.viewmodel.MainViewModel
 import yangfentuozi.batteryrecorder.ui.viewmodel.SettingsViewModel
 import yangfentuozi.batteryrecorder.utils.batteryRecorderScaffoldInsets
 import yangfentuozi.batteryrecorder.utils.navigationBarBottomPadding
-import yangfentuozi.batteryrecorder.R
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
@@ -146,17 +146,16 @@ fun HomeScreen(
     val dischargeSummary by viewModel.dischargeSummary.collectAsState()
     val currentRecordUiState by viewModel.currentRecordUiState.collectAsState()
 
-    val appSettings by settingsViewModel.appSettings.collectAsState()
     val settingsInitialized by settingsViewModel.initialized.collectAsState()
     val statisticsSettings by settingsViewModel.statisticsSettings.collectAsState()
     val recordIntervalMs by settingsViewModel.recordIntervalMs.collectAsState()
+    val dualCellEnabled by settingsViewModel.dualCellEnabled.collectAsState()
+    val calibrationValue by settingsViewModel.calibrationValue.collectAsState()
+    val dischargeDisplayPositive by settingsViewModel.dischargeDisplayPositive.collectAsState()
     val latestSettingsInitialized by rememberUpdatedState(settingsInitialized)
     val latestStatisticsSettings by rememberUpdatedState(statisticsSettings)
     val latestRecordIntervalMs by rememberUpdatedState(recordIntervalMs)
     var prevServiceConnected by remember { mutableStateOf(false) }
-    val dualCellEnabled = appSettings.dualCellEnabled
-    val calibrationValue = appSettings.calibrationValue
-    val dischargeDisplayPositive = appSettings.dischargeDisplayPositive
     var currentCapacityPercent by remember { mutableStateOf<Int?>(null) }
     var currentVoltageMv by remember { mutableStateOf<Int?>(null) }
 

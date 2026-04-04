@@ -76,13 +76,16 @@ class Server internal constructor() : IService.Stub() {
         Handlers.common.post {
             LoggerX.d(
                 TAG,
-                "updateConfig: 应用配置, intervalMs=${settings.recordIntervalMs} writeLatencyMs=${settings.writeLatencyMs} batchSize=${settings.batchSize} screenOffRecord=${settings.screenOffRecordEnabled} segmentDurationMin=${settings.segmentDurationMin} logLevel=${settings.logLevel} polling=${settings.alwaysPollingScreenStatusEnabled}"
+                "updateConfig: 应用配置, notification=${settings.notificationEnabled} dualCell=${settings.dualCellEnabled} calibration=${settings.calibrationValue} intervalMs=${settings.recordIntervalMs} writeLatencyMs=${settings.writeLatencyMs} batchSize=${settings.batchSize} screenOffRecord=${settings.screenOffRecordEnabled} segmentDurationMin=${settings.segmentDurationMin} logLevel=${settings.logLevel} polling=${settings.alwaysPollingScreenStatusEnabled}"
             )
             LoggerX.maxHistoryDays = settings.maxHistoryDays
             LoggerX.logLevel = settings.logLevel
 
             unlockOPlusSampleTimeLimit(settings.recordIntervalMs.coerceAtLeast(200))
 
+            monitor.notificationPowerMultiplier =
+                (if (settings.dualCellEnabled) 2.0 else 1.0) / settings.calibrationValue
+            monitor.setNotificationEnabled(settings.notificationEnabled)
             monitor.alwaysPollingScreenStatusEnabled = settings.alwaysPollingScreenStatusEnabled
             monitor.recordIntervalMs = settings.recordIntervalMs
             monitor.screenOffRecord = settings.screenOffRecordEnabled
@@ -331,7 +334,6 @@ class Server internal constructor() : IService.Stub() {
         }
         serverSettings?.let(::updateConfig) ?: LoggerX.w(TAG, "init: 未读取到配置, 使用当前默认值")
 
-        monitor.enableNotification()
         monitor.start()
         LoggerX.i(TAG, "init: Monitor 已启动, 进入消息循环")
 

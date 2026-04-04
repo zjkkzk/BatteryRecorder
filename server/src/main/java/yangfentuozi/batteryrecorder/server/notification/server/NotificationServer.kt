@@ -38,8 +38,8 @@ class NotificationServer(
             LoggerX.i(TAG, "@serverRunnable: 接受客户端")
             reader = StreamReader(socket!!.inputStream)
             while (true) {
-                val lineRecord = reader!!.readNext() ?: break
-                notificationUtil.updateNotification(lineRecord)
+                val info = reader!!.readNext() ?: break
+                notificationUtil.updateNotification(info)
             }
         } catch (e: IOException) {
             if (!isStopped) LoggerX.e(TAG, "@serverRunnable: 处理客户端请求时出现异常", tr = e)

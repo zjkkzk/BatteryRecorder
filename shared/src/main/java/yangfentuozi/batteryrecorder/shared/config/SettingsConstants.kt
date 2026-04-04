@@ -1,7 +1,7 @@
 package yangfentuozi.batteryrecorder.shared.config
 
-import yangfentuozi.batteryrecorder.shared.util.LoggerX
 import yangfentuozi.batteryrecorder.shared.config.dataclass.UpdateChannel
+import yangfentuozi.batteryrecorder.shared.util.LoggerX
 
 object SettingsConstants {
     const val PREFS_NAME = "app_settings"
@@ -23,6 +23,29 @@ object SettingsConstants {
         }
 
     // server
+    /** 是否启用实时功耗通知 */
+    val notificationEnabled =
+        BooleanConfigItem(
+            key = "notification_enabled",
+            def = false
+        )
+
+    /** 是否启用双电芯模式 */
+    val dualCellEnabled =
+        BooleanConfigItem(
+            key = "dual_cell_enabled",
+            def = false
+        )
+
+    /** 校准值 */
+    val calibrationValue =
+        IntConfigItem(
+            key = "calibration_value",
+            def = -1,
+            min = -100_000_000,
+            max = 100_000_000
+        )
+
     /** 记录间隔（毫秒） */
     val recordIntervalMs =
         LongConfigItem(
@@ -89,13 +112,6 @@ object SettingsConstants {
         )
 
     // app
-    /** 是否启用双电芯模式 */
-    val dualCellEnabled =
-        BooleanConfigItem(
-            key = "dual_cell_enabled",
-            def = false
-        )
-
     /** 放电电流显示为正值 */
     val dischargeDisplayPositive =
         BooleanConfigItem(
@@ -122,15 +138,6 @@ object SettingsConstants {
             def = 20,
             min = 5,
             max = 100
-        )
-
-    /** 校准值 */
-    val calibrationValue =
-        IntConfigItem(
-            key = "calibration_value",
-            def = -1,
-            min = -100_000_000,
-            max = 100_000_000
         )
 
     /** 启动时检测更新 */

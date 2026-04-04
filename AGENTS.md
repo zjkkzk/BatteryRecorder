@@ -422,6 +422,7 @@ shared/src/main/
 - 页面外层 margin 当前统一按 16.dp 收敛；若看到 24.dp，需要先确认那是不是组件内部排版或图表绘制留白，而不是页面 margin
 - ROOT 启动统一经过 `RootServerStarter.start(context, source)`
 - 当前设置系统按 `AppSettings`、`StatisticsSettings`、`ServerSettings` 分层；`SharedSettings.kt` 负责三类设置的 SharedPreferences 读写，以及 `logLevel` 编解码
+- `ServerSettings` 当前同时承载服务端运行参数与功率展示共用配置；`notificationEnabled`、`dualCellEnabled`、`calibrationValue` 都属于 `ServerSettings`，其中后两者由 App 展示侧直接复用
 - 更新检测通道属于 `AppSettings`，当前字段为 `AppSettings.updateChannel`，使用 `UpdateChannel` 枚举持久化
 - 设置页“常规”分组当前同时包含“启动时检测更新”开关与“版本类型”菜单项；“版本类型”右侧显示当前通道，点击后弹出 `DropdownMenu`
 - 当前预测设置已收敛到 `StatisticsSettings.predWeightedAlgorithmEnabled` 与 `StatisticsSettings.predWeightedAlgorithmAlphaMaxX100`

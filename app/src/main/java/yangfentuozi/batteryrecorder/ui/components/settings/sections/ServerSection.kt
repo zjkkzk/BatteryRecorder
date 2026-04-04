@@ -76,6 +76,26 @@ fun ServerSection(
 
         item {
             M3ESwitchWidget(
+                text = stringResource(R.string.settings_notification_enabled),
+                checked = state.notificationEnabled,
+                onCheckedChange = { enabled ->
+                    actions.setNotificationEnabled(enabled)
+                    if (!enabled) return@M3ESwitchWidget
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        val granted = ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.POST_NOTIFICATIONS
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (!granted) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                }
+            )
+        }
+
+        item {
+            M3ESwitchWidget(
                 text = stringResource(R.string.settings_screen_off_record),
                 checked = state.recordScreenOffEnabled,
                 onCheckedChange = actions.setScreenOffRecordEnabled

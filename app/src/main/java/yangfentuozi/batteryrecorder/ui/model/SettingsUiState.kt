@@ -28,13 +28,15 @@ data class SettingsUiState(
     val checkUpdateOnStartup: Boolean = AppSettings().checkUpdateOnStartup,
     /** 启动时检测更新使用的版本通道。 */
     val updateChannel: UpdateChannel = AppSettings().updateChannel,
-    /** 串联双电芯 */
-    val dualCellEnabled: Boolean = AppSettings().dualCellEnabled,
     /** 放电也显示正值 */
     val dischargeDisplayPositive: Boolean = AppSettings().dischargeDisplayPositive,
+    // ServerSettings：传递给记录服务的运行参数，控制采样、通知、展示换算、写盘、分段与日志行为。
+    /** 实时功耗通知 */
+    val notificationEnabled: Boolean = ServerSettings().notificationEnabled,
+    /** 串联双电芯 */
+    val dualCellEnabled: Boolean = ServerSettings().dualCellEnabled,
     /** 电流单位校准 */
-    val calibrationValue: Int = AppSettings().calibrationValue,
-    // ServerSettings：传递给记录服务的运行参数，控制采样、写盘、分段与日志行为。
+    val calibrationValue: Int = ServerSettings().calibrationValue,
     /** 采样间隔 */
     val recordIntervalMs: Long = ServerSettings().recordIntervalMs,
     /** 写入延迟 */

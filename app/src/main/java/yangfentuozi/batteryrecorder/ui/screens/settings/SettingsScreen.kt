@@ -59,6 +59,7 @@ fun SettingsScreen(
                 setCalibrationValue = settingsViewModel::setCalibrationValue
             ),
             server = ServerActions(
+                setNotificationEnabled = settingsViewModel::setNotificationEnabled,
                 setRecordIntervalMs = settingsViewModel::setRecordIntervalMs,
                 setWriteLatencyMs = settingsViewModel::setWriteLatencyMs,
                 setBatchSize = settingsViewModel::setBatchSize,
@@ -87,9 +88,10 @@ fun SettingsScreen(
         SettingsUiState(
             checkUpdateOnStartup = appSettings.checkUpdateOnStartup,
             updateChannel = appSettings.updateChannel,
-            dualCellEnabled = appSettings.dualCellEnabled,
             dischargeDisplayPositive = appSettings.dischargeDisplayPositive,
-            calibrationValue = appSettings.calibrationValue,
+            notificationEnabled = serverSettings.notificationEnabled,
+            dualCellEnabled = serverSettings.dualCellEnabled,
+            calibrationValue = serverSettings.calibrationValue,
             recordIntervalMs = serverSettings.recordIntervalMs,
             writeLatencyMs = serverSettings.writeLatencyMs,
             batchSize = serverSettings.batchSize,
