@@ -125,7 +125,7 @@ class LocalNotificationUtil : NotificationUtil {
     }
 
     private fun buildContentText(info: NotificationInfo): String {
-        return "功耗 %.2f W | 温度 %.1f℃".format(info.power, 1.0 * info.temp / 10)
+        return "功率 %.2f W | 温度 %.1f℃".format(info.power, 1.0 * info.temp / 10)
     }
 
     companion object {
