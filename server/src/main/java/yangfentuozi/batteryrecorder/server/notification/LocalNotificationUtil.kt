@@ -9,7 +9,6 @@ import android.graphics.drawable.Icon
 import android.os.RemoteException
 import android.os.ServiceManager
 import yangfentuozi.batteryrecorder.server.fakecontext.FakeContext
-import yangfentuozi.batteryrecorder.shared.data.LineRecord
 import yangfentuozi.batteryrecorder.shared.util.LoggerX
 import yangfentuozi.hiddenapi.compat.NotificationManagerCompat
 
@@ -50,7 +49,7 @@ class LocalNotificationUtil : NotificationUtil {
         }
     }
 
-    override fun updateNotification(lineRecord: LineRecord) {
+    override fun updateNotification(info: NotificationInfo) {
         synchronized(lock) {
             try {
                 NotificationManagerCompat.enqueueNotification(
@@ -58,7 +57,7 @@ class LocalNotificationUtil : NotificationUtil {
                     SHELL_PACKAGE_NAME,
                     NOTIFICATION_TAG,
                     NOTIFICATION_ID,
-                    buildNotification(lineRecord),
+                    buildNotification(info),
                     0
                 )
             } catch (e: RemoteException) {
@@ -79,8 +78,8 @@ class LocalNotificationUtil : NotificationUtil {
         }
     }
 
-    private fun buildNotification(lineRecord: LineRecord): Notification {
-        val contentText = buildContentText(lineRecord)
+    private fun buildNotification(info: NotificationInfo): Notification {
+        val contentText = buildContentText(info)
         return Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(Icon.createWithResource("android", android.R.drawable.stat_notify_sync))
             .setContentTitle(NOTIFICATION_TITLE)
@@ -101,9 +100,8 @@ class LocalNotificationUtil : NotificationUtil {
             }
     }
 
-    private fun buildContentText(lineRecord: LineRecord): String {
-        val appName = lineRecord.packageName?.takeIf { it.isNotBlank() } ?: "无"
-        return "功耗 ${lineRecord.power} | 电量 ${lineRecord.capacity}% | 前台应用 $appName"
+    private fun buildContentText(info: NotificationInfo): String {
+        return "功耗 %.2f W | 温度 %.1f℃".format(info.power, info.temp)
     }
 
     companion object {

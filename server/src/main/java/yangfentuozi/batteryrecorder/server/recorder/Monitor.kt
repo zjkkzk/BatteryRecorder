@@ -15,6 +15,7 @@ import android.os.ServiceManager
 import android.system.Os
 import androidx.annotation.Keep
 import yangfentuozi.batteryrecorder.server.notification.LocalNotificationUtil
+import yangfentuozi.batteryrecorder.server.notification.NotificationInfo
 import yangfentuozi.batteryrecorder.server.notification.NotificationUtil
 import yangfentuozi.batteryrecorder.server.notification.RemoteNotificationUtil
 import yangfentuozi.batteryrecorder.server.sampler.Sampler
@@ -70,6 +71,9 @@ class Monitor(
 
     @Volatile
     var notificationUtil: NotificationUtil? = null
+
+    @Volatile
+    var calibrationValue: Double = (if (SettingsConstants.dualCellEnabled.def) 2.0 else 1.0) / SettingsConstants.calibrationValue.def
 
     private var mAlwaysPollingScreenStatusEnabled: Boolean =
         SettingsConstants.alwaysPollingScreenStatusEnabled.def
@@ -128,7 +132,7 @@ class Monitor(
                         sample.current
                     )
                     val writeResult = writer.write(record)
-                    notificationUtil?.updateNotification(record)
+                    notificationUtil?.updateNotification(NotificationInfo(power * calibrationValue, temp))
 
                     callbackHandler.post {
                         // 回调 app：先同步当前记录文件切换，再下发已进入当前记录的实时样本。

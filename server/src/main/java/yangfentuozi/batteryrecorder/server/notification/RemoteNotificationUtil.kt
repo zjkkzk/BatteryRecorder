@@ -6,8 +6,7 @@ import android.system.Os
 import yangfentuozi.batteryrecorder.server.Global
 import yangfentuozi.batteryrecorder.server.Main
 import yangfentuozi.batteryrecorder.server.notification.server.NotificationServer
-import yangfentuozi.batteryrecorder.server.notification.stream.LineRecordWriter
-import yangfentuozi.batteryrecorder.shared.data.LineRecord
+import yangfentuozi.batteryrecorder.server.notification.stream.StreamWriter
 import yangfentuozi.batteryrecorder.shared.util.LoggerX
 import java.io.IOException
 
@@ -20,7 +19,7 @@ class RemoteNotificationUtil: NotificationUtil {
 
     private lateinit var process: Process
     private lateinit var socket: LocalSocket
-    private lateinit var writer: LineRecordWriter
+    private lateinit var writer: StreamWriter
 
     private val lock = Any()
 
@@ -30,16 +29,16 @@ class RemoteNotificationUtil: NotificationUtil {
         }
     }
 
-    override fun updateNotification(lineRecord: LineRecord) {
+    override fun updateNotification(info: NotificationInfo) {
         synchronized(lock) {
             if (tryConnecting || closed) return
             try {
-                writer.write(lineRecord)
+                writer.write(info)
             } catch (e: IOException) {
                 LoggerX.w(TAG, "updateNotification: 写入失败, 尝试重建连接", tr = e)
                 closeConnection()
                 startChildServer()
-                writer.write(lineRecord)
+                writer.write(info)
             }
         }
     }
@@ -97,7 +96,7 @@ class RemoteNotificationUtil: NotificationUtil {
             throw IOException("连接子 Server 失败", lastError)
         }
 
-        writer = LineRecordWriter(socket.outputStream)
+        writer = StreamWriter(socket.outputStream)
         tryConnecting = false
     }
 

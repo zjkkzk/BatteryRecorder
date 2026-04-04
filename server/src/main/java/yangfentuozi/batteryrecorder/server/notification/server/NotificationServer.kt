@@ -7,8 +7,8 @@ import android.os.Process
 import android.system.Os
 import yangfentuozi.batteryrecorder.server.notification.LocalNotificationUtil
 import yangfentuozi.batteryrecorder.server.notification.NotificationUtil
-import yangfentuozi.batteryrecorder.server.notification.stream.LineRecordReader
-import yangfentuozi.batteryrecorder.server.notification.stream.LineRecordStreamProtocol
+import yangfentuozi.batteryrecorder.server.notification.stream.StreamProtocol
+import yangfentuozi.batteryrecorder.server.notification.stream.StreamReader
 import yangfentuozi.batteryrecorder.shared.util.Handlers
 import yangfentuozi.batteryrecorder.shared.util.LoggerX
 import yangfentuozi.hiddenapi.compat.ServiceManagerCompat
@@ -28,7 +28,7 @@ class NotificationServer(
 
     val notificationUtil: NotificationUtil
     var socket: LocalSocket? = null
-    var reader: LineRecordReader? = null
+    var reader: StreamReader? = null
     val serverSocket: LocalServerSocket
     val serverHandler = Handlers.getHandler("ServerSocketThread")
     val serverRunnable = Runnable {
@@ -36,14 +36,14 @@ class NotificationServer(
             LoggerX.i(TAG, "@serverRunnable: 等待客户端")
             socket = serverSocket.accept()
             LoggerX.i(TAG, "@serverRunnable: 接受客户端")
-            reader = LineRecordReader(socket!!.inputStream)
+            reader = StreamReader(socket!!.inputStream)
             while (true) {
                 val lineRecord = reader!!.readNext() ?: break
                 notificationUtil.updateNotification(lineRecord)
             }
         } catch (e: IOException) {
             if (!isStopped) LoggerX.e(TAG, "@serverRunnable: 处理客户端请求时出现异常", tr = e)
-        } catch (_: LineRecordStreamProtocol.StopException) {
+        } catch (_: StreamProtocol.StopException) {
             isStopped = true
             Handlers.main.post { exitProcess(0) }
         } finally {
