@@ -185,13 +185,11 @@ object LoggerX {
                     val cutoff = LocalDate.now().minusDays(maxHistoryDays)
                     for (file in files) {
                         val match = fileNameRegex.matchEntire(file.name) ?: run {
-                            file.delete()
                             continue
                         }
                         val fileDate = try {
                             LocalDate.parse(match.groupValues[1], dateFileFormatter)
                         } catch (_: Exception) {
-                            file.delete()
                             continue
                         }
                         if (fileDate.isBefore(cutoff)) {
