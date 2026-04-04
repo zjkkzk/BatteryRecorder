@@ -267,6 +267,7 @@ class Server internal constructor() : IService.Stub() {
         }
 
         val appInfo = getAppInfo(Constants.APP_PACKAGE_NAME)
+        Global.appSourceDir = appInfo.sourceDir
         appDataDir = File(appInfo.dataDir)
         appConfigFile = File("${appInfo.dataDir}/shared_prefs/${SettingsConstants.PREFS_NAME}.xml")
         appPowerDataDir = File("${appInfo.dataDir}/${Constants.APP_POWER_DATA_PATH}")
@@ -288,19 +289,19 @@ class Server internal constructor() : IService.Stub() {
                             overwrite = true
                         )
                         shellPowerDataDir.deleteRecursively()
-                        changeOwnerRecursively(appPowerDataDir, appInfo.uid)
+                        Global.changeOwnerRecursively(appPowerDataDir, appInfo.uid)
                     }
                 }
             }
 
             LoggerX.fixFileOwner = {
-                changeOwnerRecursively(it, 2000)
+                Global.changeOwnerRecursively(it, 2000)
             }
         }
 
         try {
             writer = if (Os.getuid() == 0)
-                PowerRecordWriter(appPowerDataDir) { changeOwnerRecursively(it, appInfo.uid) }
+                PowerRecordWriter(appPowerDataDir) { Global.changeOwnerRecursively(it, appInfo.uid) }
             else
                 PowerRecordWriter(shellPowerDataDir) {}
         } catch (e: IOException) {
@@ -347,32 +348,5 @@ class Server internal constructor() : IService.Stub() {
             }
         }, "InputHandler").start()
         Looper.loop()
-    }
-
-    companion object {
-
-        fun changeOwner(file: File, uid: Int) {
-            try {
-                Os.chown(file.absolutePath, uid, uid)
-            } catch (e: ErrnoException) {
-                LoggerX.e(
-                    TAG,
-                    "changeOwner: 设置文件(夹)所有者和组失败, path=${file.absolutePath}",
-                    tr = e
-                )
-            }
-        }
-
-        fun changeOwnerRecursively(file: File, uid: Int) {
-            changeOwner(file, uid)
-            if (file.isDirectory()) {
-                val files = file.listFiles()
-                if (files != null) {
-                    for (child in files) {
-                        changeOwnerRecursively(child, uid)
-                    }
-                }
-            }
-        }
     }
 }
