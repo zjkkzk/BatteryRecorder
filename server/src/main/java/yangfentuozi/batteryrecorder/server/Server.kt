@@ -11,6 +11,7 @@ import android.system.Os
 import android.system.OsConstants
 import yangfentuozi.batteryrecorder.server.recorder.IRecordListener
 import yangfentuozi.batteryrecorder.server.recorder.Monitor
+import yangfentuozi.batteryrecorder.server.recorder.Monitor.Companion.computeNotificationPowerMultiplier
 import yangfentuozi.batteryrecorder.server.sampler.DumpsysSampler
 import yangfentuozi.batteryrecorder.server.sampler.SysfsSampler
 import yangfentuozi.batteryrecorder.server.writer.PowerRecordWriter
@@ -83,8 +84,10 @@ class Server internal constructor() : IService.Stub() {
 
             unlockOPlusSampleTimeLimit(settings.recordIntervalMs.coerceAtLeast(200))
 
-            monitor.dualCellEnabled = settings.dualCellEnabled
-            monitor.calibrationValue = settings.calibrationValue
+            monitor.notificationPowerMultiplier = computeNotificationPowerMultiplier(
+                dualCellEnabled = settings.dualCellEnabled,
+                calibrationValue = settings.calibrationValue,
+            )
             monitor.setNotificationEnabled(settings.notificationEnabled)
             monitor.alwaysPollingScreenStatusEnabled = settings.alwaysPollingScreenStatusEnabled
             monitor.recordIntervalMs = settings.recordIntervalMs

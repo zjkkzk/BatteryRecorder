@@ -31,6 +31,7 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
 private const val TAG = "Monitor"
+private const val POWER_SCALE_DIVISOR = 1_000_000_000_000.0
 
 class Monitor(
     private val writer: PowerRecordWriter,
@@ -71,10 +72,10 @@ class Monitor(
     var notificationUtil: NotificationUtil? = null
 
     @Volatile
-    var calibrationValue: Int = SettingsConstants.calibrationValue.def
-
-    @Volatile
-    var dualCellEnabled: Boolean = SettingsConstants.dualCellEnabled.def
+    var notificationPowerMultiplier: Double = computeNotificationPowerMultiplier(
+        dualCellEnabled = SettingsConstants.dualCellEnabled.def,
+        calibrationValue = SettingsConstants.calibrationValue.def,
+    )
 
     @Volatile
     private var notificationEnabled = SettingsConstants.notificationEnabled.def
@@ -137,7 +138,7 @@ class Monitor(
                     )
                     val writeResult = writer.write(record)
                     notificationUtil?.updateNotification(
-                        NotificationInfo(1.0 * power / calibrationValue * (if (dualCellEnabled) 2 else 1), temp)
+                        NotificationInfo(notificationPowerMultiplier * power, temp)
                     )
 
                     callbackHandler.post {
@@ -321,6 +322,16 @@ class Monitor(
             notificationEnabled = true
         } else {
             disableNotification()
+        }
+    }
+
+    companion object {
+        fun computeNotificationPowerMultiplier(
+            dualCellEnabled: Boolean,
+            calibrationValue: Int
+        ): Double {
+            val cellMultiplier = if (dualCellEnabled) 2.0 else 1.0
+            return cellMultiplier * calibrationValue / POWER_SCALE_DIVISOR
         }
     }
 }
