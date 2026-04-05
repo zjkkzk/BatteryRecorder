@@ -12,7 +12,7 @@
 - 息屏功耗记录，探索🧐未知场景
 
 ## 使用文档
-- [文档](https://itosang.github.io/BatteryRecorder/)
+- [文档](https://battrec.itosang.com/BatteryRecorder/)
 
 
 ## ToDo

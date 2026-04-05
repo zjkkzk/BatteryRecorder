@@ -95,7 +95,7 @@ fun BatteryRecorderTopAppBar(
                     text = { Text(stringResource(R.string.menu_user_guide)) },
                     onClick = {
                         showMenu = false
-                        context.startActivity(Intent(Intent.ACTION_VIEW, "https://itosang.github.io/BatteryRecorder".toUri()))
+                        context.startActivity(Intent(Intent.ACTION_VIEW, "https://battrec.itosang.com/BatteryRecorder".toUri()))
                     }
                 )
                 DropdownMenuItem(
