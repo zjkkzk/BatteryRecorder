@@ -14,7 +14,6 @@ import androidx.annotation.Keep
 
 @Keep
 class FakeContext : ContextWrapper(systemContext) {
-    private val packageContext: Context = systemContext
 
     override fun getPackageName(): String {
         return if (Os.getuid() == 0) "root" else "com.android.shell"
@@ -39,42 +38,41 @@ class FakeContext : ContextWrapper(systemContext) {
     }
 
     @Keep
+    @Suppress("unused")
     fun createApplicationContext(
         application: ApplicationInfo,
         flags: Int
     ): Context {
-        return packageContext
+        return this
     }
 
     override fun createPackageContext(
         packageName: String,
         flags: Int
     ): Context {
-        return packageContext
+        return this
     }
+
+    private val providerToken = Binder()
+
+    private val activityManager =
+        IActivityManager.Stub.asInterface(ServiceManager.getService("activity"))
+
+    private val externalContentResolver =
+        ExternalProviderResolver(this, activityManager, providerToken)
 
     override fun getContentResolver(): ContentResolver {
         return externalContentResolver
     }
 
     companion object {
-        private val providerToken = Binder()
-
-        private val activityManager: IActivityManager by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-            IActivityManager.Stub.asInterface(ServiceManager.getService("activity"))
-                ?: throw IllegalStateException("activity 服务未就绪")
-        }
-
-        val systemContext: Context by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-            val activityThread = ActivityThread.currentActivityThread()
-                ?: ActivityThread.systemMain()
-                ?: throw IllegalStateException("获取 system ActivityThread 失败")
-            activityThread.systemContext as? Context
-                ?: throw IllegalStateException("获取 systemContext 失败")
-        }
-
-        private val externalContentResolver by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-            ExternalProviderResolver(systemContext, activityManager, providerToken)
-        }
+        val systemContext: Context
+            get() {
+                val activityThread = ActivityThread.currentActivityThread()
+                    ?: ActivityThread.systemMain()
+                    ?: throw IllegalStateException("获取 system ActivityThread 失败")
+                return activityThread.systemContext
+                    ?: throw IllegalStateException("获取 systemContext 失败")
+            }
     }
 }

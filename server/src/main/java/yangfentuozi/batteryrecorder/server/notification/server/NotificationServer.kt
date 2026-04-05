@@ -96,8 +96,9 @@ class NotificationServer(
             Os.setuid(2000)
         }
 
-        LoggerX.i(TAG, "init: 等待 notification 服务")
+        LoggerX.i(TAG, "init: 等待 notification, activity 服务")
         ServiceManagerCompat.waitService("notification")
+        ServiceManagerCompat.waitService("activity")
         notificationUtil = LocalNotificationUtil()
 
         LoggerX.i(TAG, "init: 创建 LocalServerSocket 通信服务")

@@ -1,108 +1,92 @@
-package yangfentuozi.batteryrecorder.server.fakecontext;
+package yangfentuozi.batteryrecorder.server.fakecontext
 
-import android.app.ContentProviderHolder;
-import android.app.IActivityManager;
-import android.content.ContentResolver;
-import android.content.Context;
-import android.content.IContentProvider;
-import android.os.IBinder;
-import android.os.RemoteException;
+import android.app.IActivityManager
+import android.content.ContentResolver
+import android.content.Context
+import android.content.IContentProvider
+import android.os.IBinder
+import android.os.RemoteException
+import androidx.annotation.Keep
+import java.util.concurrent.ConcurrentHashMap
 
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
+@Keep
+@Suppress("unused")
+class ExternalProviderResolver(
+    context: Context?,
+    private val activityManager: IActivityManager,
+    private val providerToken: IBinder?
+) : ContentResolver(context) {
+    private val lock = Any()
+    private val providerRefs: ConcurrentHashMap<IBinder, ProviderRef> =
+        ConcurrentHashMap<IBinder, ProviderRef>()
 
-final class ExternalProviderResolver extends ContentResolver {
-
-    private final IActivityManager activityManager;
-    private final IBinder providerToken;
-    private final ConcurrentHashMap<IBinder, ProviderRef> providerRefs =
-            new ConcurrentHashMap<>();
-
-    ExternalProviderResolver(Context context,
-                             IActivityManager activityManager,
-                             IBinder providerToken) {
-        super(context);
-        this.activityManager = activityManager;
-        this.providerToken = providerToken;
+    fun acquireProvider(context: Context?, auth: String?): IContentProvider? {
+        return acquireExternalProvider(auth)
     }
 
-    @SuppressWarnings({"unused", "ProtectedMemberInFinalClass"})
-    protected IContentProvider acquireProvider(Context context, String auth) {
-        return acquireExternalProvider(auth);
+    fun acquireExistingProvider(context: Context?, auth: String?): IContentProvider? {
+        return acquireExternalProvider(auth)
     }
 
-    @SuppressWarnings({"unused", "ProtectedMemberInFinalClass"})
-    protected IContentProvider acquireExistingProvider(Context context, String auth) {
-        return acquireExternalProvider(auth);
+    fun releaseProvider(provider: IContentProvider): Boolean {
+        return releaseExternalProvider(provider)
     }
 
-    @SuppressWarnings("unused")
-    public boolean releaseProvider(IContentProvider provider) {
-        return releaseExternalProvider(provider);
+    fun acquireUnstableProvider(context: Context?, auth: String?): IContentProvider? {
+        return acquireExternalProvider(auth)
     }
 
-    @SuppressWarnings({"unused", "ProtectedMemberInFinalClass"})
-    protected IContentProvider acquireUnstableProvider(Context context, String auth) {
-        return acquireExternalProvider(auth);
+    fun releaseUnstableProvider(provider: IContentProvider): Boolean {
+        return releaseExternalProvider(provider)
     }
 
-    @SuppressWarnings("unused")
-    public boolean releaseUnstableProvider(IContentProvider provider) {
-        return releaseExternalProvider(provider);
+    fun unstableProviderDied(provider: IContentProvider?) {
     }
 
-    @SuppressWarnings("unused")
-    public void unstableProviderDied(IContentProvider provider) {
+    fun appNotRespondingViaProvider(provider: IContentProvider?) {
     }
 
-    @SuppressWarnings("unused")
-    public void appNotRespondingViaProvider(IContentProvider provider) {
-    }
-
-    private IContentProvider acquireExternalProvider(String auth) {
-        try {
-            ContentProviderHolder holder =
-                    activityManager.getContentProviderExternal(auth, 0, providerToken, auth);
-            if (holder == null || holder.provider == null) {
-                return null;
-            }
-            IContentProvider provider = holder.provider;
-            providerRefs.compute(provider.asBinder(), (binder, ref) -> {
-                if (ref != null) {
-                    ref.count.incrementAndGet();
-                    return ref;
+    private fun acquireExternalProvider(auth: String?): IContentProvider? {
+        synchronized(lock) {
+            try {
+                val holder =
+                    activityManager.getContentProviderExternal(auth, 0, providerToken, auth)
+                if (holder == null || holder.provider == null) {
+                    return null
                 }
-                return new ProviderRef(auth);
-            });
-            return provider;
-        } catch (RemoteException e) {
-            throw e.rethrowFromSystemServer();
+                val provider = holder.provider
+                providerRefs.compute(provider.asBinder()) { binder: IBinder?, ref: ProviderRef? ->
+                    if (ref != null) {
+                        ref.count++
+                        return@compute ref
+                    }
+                    ProviderRef(auth)
+                }
+                return provider
+            } catch (e: RemoteException) {
+                throw e.rethrowFromSystemServer()
+            }
         }
     }
 
-    private boolean releaseExternalProvider(IContentProvider provider) {
-        ProviderRef ref = providerRefs.get(provider.asBinder());
-        if (ref == null) {
-            return false;
-        }
-        if (ref.count.decrementAndGet() > 0) {
-            return true;
-        }
-        providerRefs.remove(provider.asBinder(), ref);
-        try {
-            activityManager.removeContentProviderExternal(ref.authority, providerToken);
-            return true;
-        } catch (RemoteException e) {
-            throw e.rethrowFromSystemServer();
+    private fun releaseExternalProvider(provider: IContentProvider): Boolean {
+        synchronized(lock) {
+            val ref = providerRefs[provider.asBinder()] ?: return false
+            if ((--ref.count) > 0) {
+                return true
+            }
+            providerRefs.remove(provider.asBinder(), ref)
+            try {
+                activityManager.removeContentProviderExternal(ref.authority, providerToken)
+                return true
+            } catch (e: RemoteException) {
+                throw e.rethrowFromSystemServer()
+            }
         }
     }
 
-    private static final class ProviderRef {
-        private final String authority;
-        private final AtomicInteger count = new AtomicInteger(1);
-
-        private ProviderRef(String authority) {
-            this.authority = authority;
-        }
+    private class ProviderRef(val authority: String?) {
+        @Volatile
+        var count = 1
     }
 }
