@@ -5,7 +5,6 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.graphics.drawable.Icon
 import android.os.RemoteException
 import android.os.ServiceManager
@@ -80,7 +79,6 @@ class LocalNotificationUtil : NotificationUtil {
         }
     }
 
-    @Suppress("DEPRECATION")
     private fun buildNotification(info: NotificationInfo): Notification {
         val contentText = buildContentText(info)
         return Notification.Builder(context, CHANNEL_ID)
@@ -95,12 +93,6 @@ class LocalNotificationUtil : NotificationUtil {
             .setOngoing(true)
             .setAutoCancel(false)
             .build()
-            .apply {
-                contentView = null
-                bigContentView = null
-                headsUpContentView = null
-                color = Color.TRANSPARENT
-            }
     }
 
     private val cachedIcon = buildSmallIcon()
