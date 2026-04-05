@@ -87,6 +87,7 @@ App 进程 (UI)  <->  AIDL Binder  <->  Server 进程 (root/shell)
 - root 模式下，`Server` 初始化时会创建 `ChildServerBridge`，再派生 `NotificationServer`
 - `NotificationServer` 启动后会降权到 shell uid 2000，等待 `notification` / `activity` 服务可用，并用 `LocalServerSocket` 接收主 `Server` 发来的通知流
 - 主 `Server` 通过 `RemoteNotificationUtil` 写 socket；子进程通过 `LocalNotificationUtil` + `FakeContext` 真正下发系统通知
+- `LocalNotificationUtil` 当前会复用单个 `Notification.Builder` 降低高频通知更新开销；如果修改通知固定字段、图标、channel 或 builder 生命周期，必须同步检查这条复用链路是否仍成立
 
 ### 数据采样链路
 
@@ -460,6 +461,7 @@ shared/src/main/
 - ROOT 启动统一经过 `RootServerStarter.start(context, source)`
 - root 模式下主 `Server` 会派生 `NotificationServer` 子进程处理通知；通知相关改动必须同时检查 `ChildServerBridge`、socket 协议与 `LocalNotificationUtil`
 - `NotificationServer` 依赖 `FakeContext` 获取可用 `Context` 与外部 Provider；修改通知链路时不要假设它运行在常规 Android `Application` 环境中
+- `LocalNotificationUtil` 当前通过复用 `Notification.Builder` 承担通知更新的性能优化；修改通知字段时不要无意退回到“每次更新都新建 Builder”的实现
 - `Server` 初始化末尾会创建 `BinderSender`；修改 Binder 建连或进程恢复逻辑时必须同时检查 ProcessObserver / UidObserver 重推行为
 - 当前设置系统按 `AppSettings`、`StatisticsSettings`、`ServerSettings` 分层；`SharedSettings.kt` 负责三类设置的 SharedPreferences 读写，以及 `logLevel` 编解码
 - `ServerSettings` 当前同时承载服务端运行参数与功率展示共用配置；`notificationEnabled`、`dualCellEnabled`、`calibrationValue` 都属于 `ServerSettings`，其中后两者由 App 展示侧直接复用
