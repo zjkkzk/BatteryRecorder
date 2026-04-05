@@ -42,7 +42,7 @@ private data class CommandItem(
 fun AdbGuideDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val shellCommand = remember {
-        "CLASSPATH=$(pm path yangfentuozi.batteryrecorder | cut -d: -f2) setsid app_process /system/bin yangfentuozi.batteryrecorder.server.Main </dev/null >/dev/null 2>&1 &"
+        "${context.applicationInfo.nativeLibraryDir}/libstarter.so"
     }
     val commandItems = remember(shellCommand) {
         listOf(
