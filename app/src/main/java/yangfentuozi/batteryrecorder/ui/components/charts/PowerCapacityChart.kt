@@ -95,7 +95,7 @@ private val SCREEN_OFF_COLOR = Color(0xFFD32F2F)
 private val LINE_STROKE_WIDTH = 1.3.dp
 private const val APP_ICON_ALPHA = 0.55f
 private const val TEMP_EXPAND_STEP_TENTHS = 100.0    // 10℃
-private const val VOLTAGE_AXIS_MIN_UV = 2_500_000.0 // 2.5V
+private const val VOLTAGE_AXIS_MIN_UV = 2_800_000.0 // 2.8V
 private const val VOLTAGE_AXIS_MAX_UV = 5_000_000.0 // 5.0V
 // 横屏全屏下记录详情通常会查看长时间段数据，双指平移稍微提速以减少来回拖动次数。
 private const val FULLSCREEN_TWO_FINGER_PAN_SPEED_MULTIPLIER = 2.0f
@@ -2840,7 +2840,7 @@ private fun computeTempAxisRange(points: List<RecordDetailChartPoint>): Pair<Dou
     }
 }
 
-/** 电压轴固定为 2.5V ~ 5.0V，保证所有记录详情图的纵轴一致。 */
+/** 电压轴固定为 2.8V ~ 5.0V，保证所有记录详情图的纵轴一致。 */
 private fun computeVoltageAxisRange(): Pair<Double, Double> {
     return VOLTAGE_AXIS_MIN_UV to VOLTAGE_AXIS_MAX_UV
 }
