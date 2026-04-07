@@ -1,6 +1,5 @@
 package yangfentuozi.batteryrecorder.shared.util
 
-import android.os.Looper
 import android.util.Log
 import yangfentuozi.batteryrecorder.shared.BuildConfig
 import yangfentuozi.batteryrecorder.shared.config.SettingsConstants
@@ -276,17 +275,6 @@ object LoggerX {
          */
         fun flushBlocking(timeoutMs: Long) {
             if (closed) return
-            if (Looper.myLooper() == handler.looper) {
-                try {
-                    if (!closed) {
-                        writer?.flushNowBlocking()
-                    }
-                } catch (e: Exception) {
-                    e("LogWriter", "flushBlocking: 同步刷新日志失败", tr = e, notWrite = true)
-                    throw IOException("flushBlocking: 同步刷新日志失败", e)
-                }
-                return
-            }
             val latch = CountDownLatch(1)
             var flushError: IOException? = null
             val posted = handler.post {
