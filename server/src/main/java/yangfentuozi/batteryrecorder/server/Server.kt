@@ -215,6 +215,79 @@ class Server internal constructor() : IService.Stub() {
         return readEnd
     }
 
+    /**
+     * 导出当前已落盘的服务端日志目录。
+     *
+     * 导出前会先同步 flush LoggerX，尽量把最近的故障日志和本次导出相关日志一并落盘；
+     * App 侧会把该导出视为 best-effort，失败时显式降级为仅导出 App 日志。
+     *
+     * @return 用于读取日志目录文件流的管道读端。
+     */
+    override fun exportLogs(): ParcelFileDescriptor {
+        val logDir = File("${Constants.SHELL_DATA_DIR_PATH}/${Constants.SHELL_LOG_DIR_PATH}")
+        LoggerX.i(tag, "exportLogs: 收到服务端日志导出请求", notWrite = true)
+        LoggerX.d(tag, "exportLogs: 服务端日志目录 dir=${logDir.absolutePath}", notWrite = true)
+
+        if (!logDir.exists() || !logDir.isDirectory) {
+            LoggerX.w(
+                tag,
+                "exportLogs: 服务端日志目录不可用 dir=${logDir.absolutePath}",
+                notWrite = true
+            )
+            throw RemoteException("服务端日志目录不存在: ${logDir.absolutePath}")
+        }
+
+        try {
+            LoggerX.flushBlocking()
+        } catch (e: Exception) {
+            LoggerX.e(tag, "exportLogs: 刷新服务端日志失败", tr = e, notWrite = true)
+            throw RemoteException("刷新服务端日志失败: ${e.message}").apply { initCause(e) }
+        }
+
+        if (!logDir.walkTopDown().any { it.isFile }) {
+            LoggerX.w(tag, "exportLogs: 服务端日志目录为空 dir=${logDir.absolutePath}", notWrite = true)
+            throw RemoteException("服务端日志目录为空: ${logDir.absolutePath}")
+        }
+
+        val pipe = try {
+            ParcelFileDescriptor.createPipe()
+        } catch (e: IOException) {
+            LoggerX.e(tag, "exportLogs: 创建导出管道失败", tr = e, notWrite = true)
+            throw RemoteException("创建导出管道失败: ${e.message}").apply { initCause(e) }
+        }
+        val readEnd = pipe[0]
+        val writeEnd = pipe[1]
+        LoggerX.i(tag, "exportLogs: 开始导出服务端日志")
+        LoggerX.d(tag, "exportLogs: 导出管道创建完成")
+        try {
+            LoggerX.flushBlocking()
+        } catch (e: Exception) {
+            runCatching { readEnd.close() }
+            runCatching { writeEnd.close() }
+            LoggerX.e(tag, "exportLogs: 刷新服务端日志失败", tr = e, notWrite = true)
+            throw RemoteException("刷新服务端日志失败: ${e.message}").apply { initCause(e) }
+        }
+
+        Thread {
+            try {
+                var sentCount = 0
+                PfdFileSender.sendFile(writeEnd, logDir) { file ->
+                    sentCount += 1
+                    LoggerX.d(tag, "exportLogs: 已发送日志文件 file=${file.name}")
+                }
+                LoggerX.i(tag, "exportLogs: 服务端日志导出完成 sentCount=$sentCount")
+            } catch (e: Exception) {
+                LoggerX.e(tag, "exportLogs: 服务端日志导出失败", tr = e)
+                try {
+                    writeEnd.close()
+                } catch (_: Exception) {
+                }
+            }
+        }.start()
+
+        return readEnd
+    }
+
     private fun stopServiceImmediately() {
         monitor.stop()
 
