@@ -496,10 +496,24 @@ class HistoryViewModel : ViewModel() {
         type: BatteryStatus,
         sourceUri: Uri
     ) {
-        if (_isLoading.value || _isImportExporting.value) return
+        LoggerX.i(
+            TAG,
+            "[导入] 收到批量导入请求: type=${type.dataDirName} source=$sourceUri isLoading=${_isLoading.value} isImportExporting=${_isImportExporting.value}"
+        )
+        if (_isImportExporting.value) {
+            LoggerX.w(
+                TAG,
+                "[导入] 批量导入被跳过: type=${type.dataDirName} reason=isImportExporting:${_isImportExporting.value}"
+            )
+            return
+        }
         viewModelScope.launch {
             _isImportExporting.value = true
             try {
+                LoggerX.i(
+                    TAG,
+                    "[导入] 开始批量导入记录: type=${type.dataDirName} source=$sourceUri"
+                )
                 val importedCount = withContext(Dispatchers.IO) {
                     HistoryRepository.importRecordsZip(context, type, sourceUri)
                 }
@@ -508,11 +522,19 @@ class HistoryViewModel : ViewModel() {
                     type = type,
                     preserveChargeFilter = true
                 )
+                LoggerX.i(
+                    TAG,
+                    "[导入] 批量导入成功: type=${type.dataDirName} count=$importedCount source=$sourceUri"
+                )
                 _userMessage.value = appString(R.string.toast_import_success, importedCount)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                LoggerX.e(TAG, "[导入] 批量导入失败: ${type.dataDirName}", tr = e)
+                LoggerX.e(
+                    TAG,
+                    "[导入] 批量导入失败: type=${type.dataDirName} source=$sourceUri",
+                    tr = e
+                )
                 _userMessage.value = appString(R.string.toast_import_failed)
             } finally {
                 _isImportExporting.value = false

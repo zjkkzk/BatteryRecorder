@@ -147,6 +147,10 @@ fun HistoryListScreen(
     val importAllLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
+        LoggerX.i(
+            "HistoryListScreen",
+            "[导入] 批量导入 OpenDocument 回调: type=${batteryStatus.dataDirName} uri=$uri"
+        )
         if (uri != null) {
             viewModel.importAllRecords(context, batteryStatus, uri)
         }
@@ -225,6 +229,10 @@ fun HistoryListScreen(
                     IconButton(
                         enabled = !isImportExporting,
                         onClick = {
+                            LoggerX.i(
+                                "HistoryListScreen",
+                                "[导入] 点击批量导入: type=${batteryStatus.dataDirName}"
+                            )
                             importAllLauncher.launch(
                                 arrayOf("application/zip", "application/x-zip-compressed")
                             )

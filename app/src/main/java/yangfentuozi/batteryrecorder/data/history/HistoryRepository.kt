@@ -529,8 +529,10 @@ object HistoryRepository {
         type: BatteryStatus,
         sourceUri: Uri
     ): Int {
+        LoggerX.i(TAG, "[历史] 开始导入记录压缩包: type=${type.dataDirName} source=$sourceUri")
         val inputStream = context.contentResolver.openInputStream(sourceUri)
             ?: throw IOException("Failed to open source: $sourceUri")
+        LoggerX.d(TAG, "[历史] 导入记录压缩包输入流已打开: source=$sourceUri")
         val targetDir = dataDir(context, type)
         val stagingDir = File(
             context.cacheDir,
@@ -547,6 +549,10 @@ object HistoryRepository {
                     buildList {
                         var entry = zipInput.nextEntry
                         while (entry != null) {
+                            LoggerX.d(
+                                TAG,
+                                "[历史] 读取导入 ZIP 条目: type=${type.dataDirName} entry=${entry.name} size=${entry.size}"
+                            )
                             if (entry.isDirectory) {
                                 throw IOException("ZIP 包含目录条目，不是一键导出格式: ${entry.name}")
                             }
@@ -570,6 +576,10 @@ object HistoryRepository {
                                 zipInput.copyTo(output)
                             }
                             validateImportedRecordFile(stagedFile)
+                            LoggerX.d(
+                                TAG,
+                                "[历史] 导入 ZIP 条目校验完成: type=${type.dataDirName} entry=$entryName size=${stagedFile.length()}"
+                            )
                             add(stagedFile)
                             zipInput.closeEntry()
                             entry = zipInput.nextEntry
@@ -584,6 +594,10 @@ object HistoryRepository {
                 val destinationFile = File(targetDir, stagedFile.name)
                 stagedFile.copyTo(destinationFile, overwrite = true)
                 getPowerStatsCacheFile(context.cacheDir, stagedFile.name).delete()
+                LoggerX.d(
+                    TAG,
+                    "[历史] 导入记录文件写入完成: type=${type.dataDirName} file=${stagedFile.name} destination=${destinationFile.absolutePath}"
+                )
             }
             LoggerX.i(TAG, "[历史] 导入记录压缩包成功: type=${type.dataDirName} count=${stagedEntries.size} source=$sourceUri")
             return stagedEntries.size
