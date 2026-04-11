@@ -71,6 +71,7 @@ import yangfentuozi.batteryrecorder.data.model.normalizeRecordDetailChartPoints
 import yangfentuozi.batteryrecorder.ui.theme.AppShape
 import yangfentuozi.batteryrecorder.utils.AppIconMemoryCache
 import yangfentuozi.batteryrecorder.utils.formatDateTime
+import yangfentuozi.batteryrecorder.utils.formatExactDateTime
 import yangfentuozi.batteryrecorder.utils.formatRelativeTime
 import java.util.Locale
 import kotlin.math.abs
@@ -1474,6 +1475,7 @@ private fun SelectedPointInfo(
     } else {
         val offset = (selected.timestamp - recordStartTime).coerceAtLeast(0L)
         val timeText = formatRelativeTime(offset)
+        val absoluteTimeText = formatExactDateTime(selected.timestamp)
         val displayPowerW = selectPowerValueForDisplay(selected, powerCurveMode)
         val powerText = if (powerCurveMode == PowerCurveMode.Fitted) {
             String.format(LocalLocale.current.platformLocale, "%.2f W", displayPowerW)
@@ -1497,7 +1499,7 @@ private fun SelectedPointInfo(
                     selected.voltage / 1_000_000.0
                 )
             }"
-        "$timeText · $powerText · $capacityText$tempText$voltageText"
+        "$absoluteTimeText · $timeText\n$powerText · $capacityText$tempText$voltageText"
     }
     Row(
         modifier = Modifier

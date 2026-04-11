@@ -46,6 +46,16 @@ fun formatDateTime(timestamp: Long): String {
 }
 
 /**
+ * 将时间戳格式化为 HH:mm:ss 格式
+ * @param timestamp Unix 时间戳（毫秒），如 1705900800000
+ * @return 格式化后的时间字符串，如 "14:30"
+ */
+fun formatExactDateTime(timestamp: Long): String {
+    val formatter = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+    return formatter.format(Date(timestamp))
+}
+
+/**
  * 将时间戳格式化为 yyyy/MM/dd HH:mm 格式
  * @param timestamp Unix 时间戳（毫秒），如 1705900800000
  * @return 格式化后的时间字符串，如 "2026/03/11 14:30"
@@ -56,18 +66,12 @@ fun formatFullDateTime(timestamp: Long): String {
 }
 
 fun formatRelativeTime(offsetMs: Long): String {
-    val totalMinutes = (offsetMs / 60000L).toInt().coerceAtLeast(0)
+    val totalSeconds = (offsetMs / 1000L).toInt().coerceAtLeast(0)
+    val totalMinutes = (totalSeconds / 60).coerceAtLeast(0)
     val hours = totalMinutes / 60
     val minutes = totalMinutes % 60
-    return if (hours > 0) {
-        if (minutes == 0) {
-            "${hours}h"
-        } else {
-            "${hours}h${minutes}m"
-        }
-    } else {
-        "${minutes}m"
-    }
+    val seconds = totalSeconds % 60
+    return "${hours}h${minutes}m${seconds}s"
 }
 
 fun computePowerW(
