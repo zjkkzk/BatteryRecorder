@@ -85,6 +85,7 @@ import yangfentuozi.batteryrecorder.ui.viewmodel.RecordDetailPowerUiState
 import yangfentuozi.batteryrecorder.ui.viewmodel.SettingsViewModel
 import yangfentuozi.batteryrecorder.utils.AppIconMemoryCache
 import yangfentuozi.batteryrecorder.utils.batteryRecorderScaffoldInsets
+import yangfentuozi.batteryrecorder.utils.computePowerW
 import yangfentuozi.batteryrecorder.utils.formatDateTime
 import yangfentuozi.batteryrecorder.utils.formatDetailDuration
 import yangfentuozi.batteryrecorder.utils.formatDurationHours
@@ -99,6 +100,7 @@ private const val KEY_SHOW_VOLTAGE_CURVE = "show_voltage_curve"
 private const val KEY_SHOW_APP_ICONS = "show_app_icons"
 // 充电刚开始阶段经常出现短暂反向抖动，不希望仅靠这段预热噪声就把整张图切到双向轴。
 private const val CHARGING_NEGATIVE_AXIS_DETECTION_IGNORE_PERCENT = 10
+private const val MILLISECONDS_PER_HOUR = 3_600_000.0
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -463,11 +465,17 @@ fun RecordDetailScreen(
                                             val calibratedMah = baseMah * chargingMahDisplayMultiplier
                                             val displayMah =
                                                 if (dualCellEnabled) calibratedMah * 2.0 else calibratedMah
+                                            val displayWh = computePowerW(
+                                                rawPower = stats.averagePower,
+                                                dualCellEnabled = dualCellEnabled,
+                                                calibrationValue = calibrationValue
+                                            ) * (durationMs.toDouble() / MILLISECONDS_PER_HOUR)
                                             append(" - ")
                                             append(
                                                 String.format(
                                                     java.util.Locale.getDefault(),
-                                                    "%.1fmAh",
+                                                    "%.2fWh(%.0fmAh)",
+                                                    displayWh,
                                                     displayMah
                                                 )
                                             )
