@@ -113,6 +113,7 @@ fun RecordDetailScreen(
     onNavigateBack: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val locale = LocalLocale.current.platformLocale
     val activity = remember(context) { context.findActivity() }
     val record by viewModel.recordDetail.collectAsState()
     val chartUiState by viewModel.recordChartUiState.collectAsState()
@@ -251,11 +252,7 @@ fun RecordDetailScreen(
         val detailState = detail?.takeIf { isTargetRecordLoaded }
         val stats = detailState?.stats
         val durationMs = stats?.let { it.endTime - it.startTime }
-        val capacityChange = when (detailState?.type) {
-            BatteryStatus.Charging -> stats?.let { it.endCapacity - it.startCapacity }
-            BatteryStatus.Discharging -> stats?.let { it.startCapacity - it.endCapacity }
-            else -> null
-        }
+        val capacityChange = recordDetailPowerUiState?.capacityChange
         val detailType = detailState?.type ?: recordsFile.type
         val typeLabel = if (detailType == BatteryStatus.Charging) {
             stringResource(R.string.history_record_type_charging)
@@ -456,26 +453,29 @@ fun RecordDetailScreen(
                                         )
                                     )
                                 }
-                                if (detailState.type == BatteryStatus.Charging && capacityChange != null) {
+                                if (
+                                    detailState.type == BatteryStatus.Charging &&
+                                    capacityChange != null
+                                ) {
                                     val capacityChangeText = buildString {
-                                        append("${capacityChange}%")
-                                        recordDetailPowerUiState?.totalTransferredMah?.let { mah ->
-                                            val displayMah = if (dualCellEnabled) mah * 2.0 else mah
-                                            val displayWh = computePowerW(
-                                                rawPower = stats.averagePower,
-                                                dualCellEnabled = dualCellEnabled,
-                                                calibrationValue = calibrationValue
-                                            ) * (durationMs.toDouble() / MILLISECONDS_PER_HOUR)
-                                            append(" - ")
-                                            append(
-                                                String.format(
-                                                    LocalLocale.current.platformLocale,
-                                                    "%.2fWh(%.0fmAh)",
-                                                    displayWh,
-                                                    displayMah
-                                                )
+                                        append("${capacityChange.totalPercent}%")
+                                        val mah = recordDetailPowerUiState?.totalTransferredMah
+                                            ?: return@buildString
+                                        val displayMah = if (dualCellEnabled) mah * 2.0 else mah
+                                        val displayWh = computePowerW(
+                                            rawPower = stats.averagePower,
+                                            dualCellEnabled = dualCellEnabled,
+                                            calibrationValue = calibrationValue
+                                        ) * (durationMs.toDouble() / MILLISECONDS_PER_HOUR)
+                                        append(" - ")
+                                        append(
+                                            String.format(
+                                                locale,
+                                                "%.2fWh (%.0fmAh)",
+                                                displayWh,
+                                                displayMah
                                             )
-                                        }
+                                        )
                                     }
                                     InfoRow(
                                         stringResource(R.string.history_info_capacity_change),
@@ -483,38 +483,36 @@ fun RecordDetailScreen(
                                     )
                                 }
                                 val screenOnDurationText = formatDurationHours(stats.screenOnTimeMs)
-                                val screenOnText =
-                                    (if (detailState.type != BatteryStatus.Charging) {
-                                        recordDetailPowerUiState?.screenOnConsumedMah
-                                    } else {
-                                        null
-                                    })?.let { mah ->
-                                        val displayMah = if (dualCellEnabled) mah * 2.0 else mah
+                                val screenOnText = if (detailState.type != BatteryStatus.Charging) {
+                                    recordDetailPowerUiState?.let { powerUiState ->
+                                        val displayMah = if (dualCellEnabled) {
+                                            powerUiState.screenOnConsumedMah * 2.0
+                                        } else {
+                                            powerUiState.screenOnConsumedMah
+                                        }
                                         "$screenOnDurationText - ${
-                                            String.format(
-                                                java.util.Locale.getDefault(),
-                                                "%.1fmAh",
-                                                displayMah
-                                            )
-                                        }"
+                                            String.format(locale, "%.1fmAh", displayMah)
+                                        } (${powerUiState.capacityChange.screenOnPercent}%)"
                                     } ?: screenOnDurationText
+                                } else {
+                                    screenOnDurationText
+                                }
                                 val screenOffDurationText =
                                     formatDurationHours(stats.screenOffTimeMs)
-                                val screenOffText =
-                                    (if (detailState.type != BatteryStatus.Charging) {
-                                        recordDetailPowerUiState?.screenOffConsumedMah
-                                    } else {
-                                        null
-                                    })?.let { mah ->
-                                        val displayMah = if (dualCellEnabled) mah * 2.0 else mah
+                                val screenOffText = if (detailState.type != BatteryStatus.Charging) {
+                                    recordDetailPowerUiState?.let { powerUiState ->
+                                        val displayMah = if (dualCellEnabled) {
+                                            powerUiState.screenOffConsumedMah * 2.0
+                                        } else {
+                                            powerUiState.screenOffConsumedMah
+                                        }
                                         "$screenOffDurationText - ${
-                                            String.format(
-                                                java.util.Locale.getDefault(),
-                                                "%.1fmAh",
-                                                displayMah
-                                            )
-                                        }"
+                                            String.format(locale, "%.1fmAh", displayMah)
+                                        } (${powerUiState.capacityChange.screenOffPercent}%)"
                                     } ?: screenOffDurationText
+                                } else {
+                                    screenOffDurationText
+                                }
                                 InfoRow(
                                     stringResource(R.string.history_info_screen_on),
                                     screenOnText

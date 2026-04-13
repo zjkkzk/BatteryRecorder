@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import yangfentuozi.batteryrecorder.R
 import yangfentuozi.batteryrecorder.appString
+import yangfentuozi.batteryrecorder.data.history.CapacityChange
 import yangfentuozi.batteryrecorder.data.history.HistoryRecord
 import yangfentuozi.batteryrecorder.data.history.HistoryRepository
 import yangfentuozi.batteryrecorder.data.history.HistoryRepository.toFile
@@ -61,7 +62,8 @@ data class RecordDetailPowerUiState(
     val screenOffAveragePower: Double?,
     val totalTransferredMah: Double,
     val screenOnConsumedMah: Double,
-    val screenOffConsumedMah: Double
+    val screenOffConsumedMah: Double,
+    val capacityChange: CapacityChange
 )
 
 private data class LoadedRecordDetailState(
@@ -878,7 +880,8 @@ class HistoryViewModel : ViewModel() {
             screenOffAveragePower = stats.screenOffAveragePowerRaw?.times(multiplier),
             totalTransferredMah = stats.netMahBase * calibrationValue,
             screenOnConsumedMah = stats.screenOnMahBase * calibrationMagnitude,
-            screenOffConsumedMah = stats.screenOffMahBase * calibrationMagnitude
+            screenOffConsumedMah = stats.screenOffMahBase * calibrationMagnitude,
+            capacityChange = stats.capacityChange
         )
     }
 
@@ -1004,7 +1007,10 @@ class HistoryViewModel : ViewModel() {
         ) {
             return null
         }
-        return RecordDetailPowerStatsComputer.compute(lineRecords)
+        return RecordDetailPowerStatsComputer.compute(
+            detailType = detailType,
+            records = lineRecords
+        )
     }
 
     private fun resolveAppLabel(

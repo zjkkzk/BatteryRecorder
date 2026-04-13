@@ -1,10 +1,24 @@
 package yangfentuozi.batteryrecorder.data.history
 
+import yangfentuozi.batteryrecorder.shared.data.BatteryStatus
 import yangfentuozi.batteryrecorder.shared.data.LineRecord
 import yangfentuozi.batteryrecorder.shared.util.LoggerX
 
 private const val TAG = "RecordDetailPowerStats"
 private const val MICROAMPERE_HOUR_DIVISOR = 3_600_000_000.0
+
+/**
+ * 记录详情页电量变化拆分结果。
+ *
+ * @param totalPercent 当前记录的总电量变化百分比。
+ * @param screenOffPercent 息屏区间累计的电量变化百分比。
+ * @param screenOnPercent 亮屏区间累计的电量变化百分比。
+ */
+data class CapacityChange(
+    val totalPercent: Int,
+    val screenOffPercent: Int,
+    val screenOnPercent: Int
+)
 
 /**
  * 详情页功耗统计结果。
@@ -17,7 +31,8 @@ data class RecordDetailPowerStats(
     val screenOffAveragePowerRaw: Double?,
     val netMahBase: Double,
     val screenOnMahBase: Double,
-    val screenOffMahBase: Double
+    val screenOffMahBase: Double,
+    val capacityChange: CapacityChange
 )
 
 object RecordDetailPowerStatsComputer {
@@ -25,10 +40,14 @@ object RecordDetailPowerStatsComputer {
     /**
      * 按记录文件的真实采样区间计算详情页功耗统计。
      *
+     * @param detailType 当前详情页记录类型，只接受充电和放电。
      * @param records 已通过解析得到的有效记录点列表，要求时间戳按文件原始顺序传入
-     * @return 返回总平均、亮屏平均、息屏平均三项原始功率，以及“校准值为 1 时”的净 mAh 变化量和亮屏/息屏耗电量；若有效区间不足则返回 null
+     * @return 返回总平均、亮屏平均、息屏平均三项原始功率，以及“校准值为 1 时”的净 mAh 变化量、亮屏/息屏耗电量和电量变化拆分；若有效区间不足则返回 null
      */
-    fun compute(records: List<LineRecord>): RecordDetailPowerStats? {
+    fun compute(
+        detailType: BatteryStatus,
+        records: List<LineRecord>
+    ): RecordDetailPowerStats? {
         if (records.size < 2) return null
 
         var totalDurationMs = 0L
@@ -37,9 +56,11 @@ object RecordDetailPowerStatsComputer {
         var screenOnDurationMs = 0L
         var screenOnEnergyRawMs = 0.0
         var screenOnMahBase = 0.0
+        var screenOnCapacityDropPercent = 0
         var screenOffDurationMs = 0L
         var screenOffEnergyRawMs = 0.0
         var screenOffMahBase = 0.0
+        var screenOffCapacityDropPercent = 0
 
         var previous: LineRecord? = null
         records.forEach { current ->
@@ -62,6 +83,11 @@ object RecordDetailPowerStatsComputer {
                 currentCurrent = current.current,
                 durationMs = durationMs
             )
+            val capacityDelta = computeCapacityDelta(
+                detailType = detailType,
+                previousCapacity = previousRecord.capacity,
+                currentCapacity = current.capacity
+            )
             totalDurationMs += durationMs
             totalEnergyRawMs += energyRawMs
             netMahBase += transferredMahBaseSigned
@@ -70,16 +96,23 @@ object RecordDetailPowerStatsComputer {
                 screenOnDurationMs += durationMs
                 screenOnEnergyRawMs += energyRawMs
                 screenOnMahBase += consumedMahBase
+                screenOnCapacityDropPercent += capacityDelta
                 return@forEach
             }
 
             screenOffDurationMs += durationMs
             screenOffEnergyRawMs += energyRawMs
             screenOffMahBase += consumedMahBase
+            screenOffCapacityDropPercent += capacityDelta
         }
 
         if (totalDurationMs <= 0L) return null
 
+        val capacityChange = CapacityChange(
+            totalPercent = screenOffCapacityDropPercent + screenOnCapacityDropPercent,
+            screenOffPercent = screenOffCapacityDropPercent,
+            screenOnPercent = screenOnCapacityDropPercent
+        )
         val stats = RecordDetailPowerStats(
             averagePowerRaw = totalEnergyRawMs / totalDurationMs.toDouble(),
             screenOnAveragePowerRaw = screenOnDurationMs.takeIf { it > 0L }?.let {
@@ -90,13 +123,35 @@ object RecordDetailPowerStatsComputer {
             },
             netMahBase = netMahBase,
             screenOnMahBase = screenOnMahBase,
-            screenOffMahBase = screenOffMahBase
+            screenOffMahBase = screenOffMahBase,
+            capacityChange = capacityChange
         )
         LoggerX.d(
             TAG,
-            "[记录详情] mAh 统计完成: netMahBase=${stats.netMahBase} screenOnMahBase=${stats.screenOnMahBase} screenOffMahBase=${stats.screenOffMahBase}"
+            "[记录详情] 统计完成: netMahBase=${stats.netMahBase} screenOnMahBase=${stats.screenOnMahBase} screenOffMahBase=${stats.screenOffMahBase} totalCapacity=${stats.capacityChange.totalPercent} screenOnCapacity=${stats.capacityChange.screenOnPercent} screenOffCapacity=${stats.capacityChange.screenOffPercent}"
         )
         return stats
+    }
+
+    /**
+     * 按记录类型计算当前区间的电量变化百分比。
+     *
+     * @param detailType 当前详情页记录类型，只接受充电和放电。
+     * @param previousCapacity 区间起点电量百分比。
+     * @param currentCapacity 区间终点电量百分比。
+     * @return 返回当前区间在正确语义下的正向电量变化值；方向不一致时返回 0。
+     */
+    private fun computeCapacityDelta(
+        detailType: BatteryStatus,
+        previousCapacity: Int,
+        currentCapacity: Int
+    ): Int {
+        val rawDelta = when (detailType) {
+            BatteryStatus.Discharging -> previousCapacity - currentCapacity
+            BatteryStatus.Charging -> currentCapacity - previousCapacity
+            else -> throw IllegalArgumentException("Unsupported detail type: $detailType")
+        }
+        return rawDelta.coerceAtLeast(0)
     }
 
     /**
