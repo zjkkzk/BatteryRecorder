@@ -48,8 +48,8 @@ static int init_file_cache() {
     if (!g_cache.capacity_fp) {
         LOGE("%s: Failed to open capacity", __func__);
         fclose(g_cache.voltage_fp);
-        g_cache.current_fp = NULL;
         fclose(g_cache.current_fp);
+        g_cache.current_fp = NULL;
         return 0;
     }
 
