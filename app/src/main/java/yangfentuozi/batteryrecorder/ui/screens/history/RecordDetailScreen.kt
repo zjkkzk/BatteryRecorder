@@ -281,8 +281,9 @@ fun RecordDetailScreen(
             hasNegativeChargingPower -> FixedPowerAxisMode.Bidirectional
             else -> FixedPowerAxisMode.PositiveOnly
         }
+        val displayPowerCurveMode = powerCurveMode.resolveForDetailType(detailType)
         val curveVisibility = RecordChartCurveVisibility(
-            powerCurveMode = powerCurveMode,
+            powerCurveMode = displayPowerCurveMode,
             showCapacity = showCapacity,
             showTemp = showTemp,
             showVoltage = showVoltage
@@ -342,7 +343,7 @@ fun RecordDetailScreen(
                         }
                     },
                     onTogglePowerVisibility = {
-                        val nextValue = powerCurveMode.next()
+                        val nextValue = powerCurveMode.next(detailType)
                         chartPrefs.edit { putString(KEY_POWER_CURVE_MODE, nextValue.name) }
                         powerCurveMode = nextValue
                     },
@@ -613,11 +614,26 @@ private fun loadPowerCurveMode(value: String?): PowerCurveMode {
     return PowerCurveMode.entries.firstOrNull { it.name == value } ?: PowerCurveMode.Raw
 }
 
-private fun PowerCurveMode.next(): PowerCurveMode {
-    // 图例点击按 Raw -> Fitted -> Hidden 循环切换，
-    // 让“同一入口控制功耗线模式”比单独再做弹窗或多按钮更轻量。
-    return when (this) {
-        PowerCurveMode.Raw -> PowerCurveMode.Fitted
+private fun PowerCurveMode.resolveForDetailType(detailType: BatteryStatus): PowerCurveMode {
+    return if (detailType == BatteryStatus.Charging && this == PowerCurveMode.Fitted) {
+        PowerCurveMode.Raw
+    } else {
+        this
+    }
+}
+
+private fun PowerCurveMode.next(detailType: BatteryStatus): PowerCurveMode {
+    // 放电页继续按 Raw -> Fitted -> Hidden 循环；
+    // 充电页禁用趋势，只保留 Raw <-> Hidden。
+    return when (resolveForDetailType(detailType)) {
+        PowerCurveMode.Raw -> {
+            if (detailType == BatteryStatus.Charging) {
+                PowerCurveMode.Hidden
+            } else {
+                PowerCurveMode.Fitted
+            }
+        }
+
         PowerCurveMode.Fitted -> PowerCurveMode.Hidden
         PowerCurveMode.Hidden -> PowerCurveMode.Raw
     }

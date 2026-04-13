@@ -3,7 +3,7 @@ package yangfentuozi.batteryrecorder.shared.config
 import android.content.SharedPreferences
 import yangfentuozi.batteryrecorder.shared.config.dataclass.ServerSettings
 
-private interface ServerSettingsValueSource {
+private interface ServerSettingsRawValueSource {
     fun boolean(key: String): Boolean?
     fun int(key: String): Int?
     fun long(key: String): Long?
@@ -11,7 +11,7 @@ private interface ServerSettingsValueSource {
 
 private class SharedPreferencesServerSettingsSource(
     private val prefs: SharedPreferences
-) : ServerSettingsValueSource {
+) : ServerSettingsRawValueSource {
     override fun boolean(key: String): Boolean? =
         if (prefs.contains(key)) prefs.getBoolean(key, false) else null
 
@@ -22,9 +22,12 @@ private class SharedPreferencesServerSettingsSource(
         if (prefs.contains(key)) prefs.getLong(key, 0L) else null
 }
 
-private class StringValueMapServerSettingsSource(
+/**
+ * 面向字符串键值对的原始配置源，供 XML/Map 解码复用。
+ */
+private class StringMapServerSettingsSource(
     private val values: Map<String, String>
-) : ServerSettingsValueSource {
+) : ServerSettingsRawValueSource {
     override fun boolean(key: String): Boolean? =
         values[key]?.toBooleanStrictOrNull()
 
@@ -49,7 +52,7 @@ object ServerSettingsCodec {
      * @return 组装后的服务端配置；缺字段时回退默认值。
      */
     fun readFromPreferences(prefs: SharedPreferences): ServerSettings =
-        readFromSource(SharedPreferencesServerSettingsSource(prefs))
+        decodeFromSource(SharedPreferencesServerSettingsSource(prefs))
 
     /**
      * 从字符串键值对读取服务端配置。
@@ -58,7 +61,7 @@ object ServerSettingsCodec {
      * @return 组装后的服务端配置；缺字段或字段解析失败时回退默认值。
      */
     fun readFromStringValues(values: Map<String, String>): ServerSettings =
-        readFromSource(StringValueMapServerSettingsSource(values))
+        decodeFromSource(StringMapServerSettingsSource(values))
 
     /**
      * 将服务端配置写入 SharedPreferences.Editor。
@@ -90,7 +93,7 @@ object ServerSettingsCodec {
         )
     }
 
-    private fun readFromSource(source: ServerSettingsValueSource): ServerSettings =
+    private fun decodeFromSource(source: ServerSettingsRawValueSource): ServerSettings =
         ServerSettings(
             notificationEnabled =
                 source.boolean(SettingsConstants.notificationEnabled.key)
