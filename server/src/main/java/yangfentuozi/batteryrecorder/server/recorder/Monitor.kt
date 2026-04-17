@@ -9,11 +9,13 @@ import android.hardware.display.IDisplayManager
 import android.hardware.display.IDisplayManagerCallback
 import android.os.Handler
 import android.os.IPowerManager
+import android.os.PowerManager
 import android.os.RemoteCallbackList
 import android.os.RemoteException
 import android.os.ServiceManager
 import android.system.Os
 import androidx.annotation.Keep
+import yangfentuozi.batteryrecorder.server.fakecontext.FakeContext
 import yangfentuozi.batteryrecorder.server.notification.LocalNotificationUtil
 import yangfentuozi.batteryrecorder.server.notification.NotificationInfo
 import yangfentuozi.batteryrecorder.server.notification.NotificationUtil
@@ -68,6 +70,26 @@ class Monitor(
 
     @Volatile
     var screenOffRecord: Boolean = SettingsConstants.screenOffRecordEnabled.def
+        set(value) {
+            val oldValue = field
+            if (oldValue == value) return
+            field = value
+            LoggerX.d(tag, "screenOffRecord: 配置变更, $oldValue -> $value")
+            updatePreciseScreenOffWakeLockState()
+        }
+
+    @Volatile
+    var preciseScreenOffRecordEnabled: Boolean = SettingsConstants.preciseScreenOffRecordEnabled.def
+        set(value) {
+            val oldValue = field
+            if (oldValue == value) return
+            field = value
+            LoggerX.d(tag, "preciseScreenOffRecordEnabled: 配置变更, $oldValue -> $value")
+            if (!oldValue && value) {
+                preparePreciseScreenOffWakeLock()
+            }
+            updatePreciseScreenOffWakeLockState()
+        }
 
     @Volatile
     var notificationUtil: NotificationUtil? = null
@@ -107,6 +129,10 @@ class Monitor(
 
     @Volatile
     private var stopped = false
+    private var preciseScreenOffWakeLock: PowerManager.WakeLock? = null
+    @Volatile
+    private var preciseScreenOffWakeLockDisabledForCurrentServer = false
+    private var lastPreciseScreenOffWakeLockDecisionReason: String? = null
     private val lock = ReentrantLock()
     private val condition = lock.newCondition()
     private val callbackHandler: Handler
@@ -127,6 +153,7 @@ class Monitor(
                             LoggerX.d(tag, "@thread: 亮屏状态变化, $oldIsInteractive -> $latestIsInteractive")
                         }
                         isInteractive = latestIsInteractive
+                        updatePreciseScreenOffWakeLockState()
                     }
                     val record = LineRecord(
                         timestamp,
@@ -195,6 +222,7 @@ class Monitor(
                         while (!stopped && !screenOffRecord && !isInteractive && alwaysPollingScreenStatusEnabled) {
                             condition.await(recordIntervalMs, TimeUnit.MILLISECONDS)
                             isInteractive = iPowerManager.isInteractive
+                            updatePreciseScreenOffWakeLockState()
                         }
                     } else {
                         LoggerX.d(tag, "@thread: 暂停采样, 等待亮屏事件")
@@ -208,8 +236,11 @@ class Monitor(
 
     fun start() {
         LoggerX.d(tag,
-            "start: alwaysPollingScreenStatusEnabled=$alwaysPollingScreenStatusEnabled screenOffRecord=$screenOffRecord"
+            "start: alwaysPollingScreenStatusEnabled=$alwaysPollingScreenStatusEnabled screenOffRecord=$screenOffRecord preciseScreenOffRecordEnabled=$preciseScreenOffRecordEnabled"
         )
+        if (preciseScreenOffRecordEnabled) {
+            preparePreciseScreenOffWakeLock()
+        }
         try {
             iActivityTaskManager.registerTaskStackListener(taskStackListener)
             if (!alwaysPollingScreenStatusEnabled) {
@@ -226,8 +257,22 @@ class Monitor(
             throw RuntimeException("start: 获取当前焦点任务信息失败", e)
         }
         isInteractive = iPowerManager.isInteractive
+        updatePreciseScreenOffWakeLockState()
         LoggerX.d(tag, "start: initial isInteractive=$isInteractive")
         thread.start()
+    }
+
+    /**
+     * 在非 Binder 回调线程预创建精确息屏记录的唤醒锁实例，避免首次息屏回调落在 Binder 线程时
+     * 触发 `FakeContext.systemContext` 的惰性初始化，进而命中无 Looper 线程创建 ActivityThread 的崩溃。
+     *
+     * @return 无；预创建失败时会在当前 Server 生命周期内静默禁用该功能。
+     */
+    private fun preparePreciseScreenOffWakeLock() {
+        val wakeLock = requirePreciseScreenOffWakeLock()
+        if (wakeLock != null) {
+            LoggerX.d(tag, "preparePreciseScreenOffWakeLock: 唤醒锁实例预创建完成")
+        }
     }
 
     private fun registerDisplayEventCallback() {
@@ -246,6 +291,7 @@ class Monitor(
                 val oldIsInteractive = isInteractive
                 val latestIsInteractive = iPowerManager.isInteractive
                 isInteractive = latestIsInteractive
+                updatePreciseScreenOffWakeLockState()
                 LoggerX.d(tag,
                     "onDisplayEvent: displayId=$displayId event=$event interactive $oldIsInteractive -> $latestIsInteractive paused=$paused"
                 )
@@ -271,6 +317,7 @@ class Monitor(
     fun stop() {
         stopped = true
         notifyLock()
+        releasePreciseScreenOffWakeLockIfHeld("服务停止")
         try {
             iActivityTaskManager.unregisterTaskStackListener(taskStackListener)
         } catch (e: RemoteException) {
@@ -355,8 +402,141 @@ class Monitor(
         }
     }
 
+    /**
+     * 按当前屏幕状态与配置同步精确息屏记录的唤醒锁状态。
+     *
+     * 这里只在“开启精确息屏记录 + 开启息屏记录 + 当前确实处于息屏”时持锁，
+     * 避免把亮屏阶段也变成常驻保活，额外抬高非目标场景功耗。
+     *
+     * @return 无；状态不满足时会主动释放已持有的唤醒锁。
+     */
+    @Synchronized
+    private fun updatePreciseScreenOffWakeLockState() {
+        val shouldHoldWakeLock =
+            preciseScreenOffRecordEnabled &&
+                !preciseScreenOffWakeLockDisabledForCurrentServer &&
+                screenOffRecord &&
+                !isInteractive &&
+                !stopped
+        val currentReason = when {
+            stopped -> "服务停止"
+            preciseScreenOffWakeLockDisabledForCurrentServer -> "当前服务已禁用精确息屏记录"
+            isInteractive -> "屏幕亮起"
+            !screenOffRecord -> "息屏记录关闭"
+            !preciseScreenOffRecordEnabled -> "精确息屏记录关闭"
+            else -> "满足持锁条件"
+        }
+
+        val wakeLock = preciseScreenOffWakeLock
+        if (shouldHoldWakeLock) {
+            if (wakeLock == null) {
+                LoggerX.e(tag, "updatePreciseScreenOffWakeLockState: 满足持锁条件但唤醒锁尚未初始化")
+                lastPreciseScreenOffWakeLockDecisionReason = "唤醒锁未初始化"
+                return
+            }
+            if (!wakeLock.isHeld) {
+                LoggerX.d(
+                    tag,
+                    "updatePreciseScreenOffWakeLockState: 准备持有唤醒锁, preciseScreenOffRecordEnabled=$preciseScreenOffRecordEnabled screenOffRecord=$screenOffRecord isInteractive=$isInteractive stopped=$stopped"
+                )
+                wakeLock.acquire()
+                if (wakeLock.isHeld) {
+                    LoggerX.i(tag, "updatePreciseScreenOffWakeLockState: 已持有唤醒锁")
+                } else {
+                    LoggerX.w(tag, "updatePreciseScreenOffWakeLockState: acquire() 返回后仍未持有唤醒锁")
+                }
+            } else {
+                LoggerX.d(tag, "updatePreciseScreenOffWakeLockState: 唤醒锁已处于持有状态，跳过重复 acquire")
+            }
+            lastPreciseScreenOffWakeLockDecisionReason = currentReason
+            return
+        }
+
+        if (wakeLock?.isHeld == true) {
+            releasePreciseScreenOffWakeLockIfHeld(currentReason)
+            lastPreciseScreenOffWakeLockDecisionReason = currentReason
+            return
+        }
+        if (lastPreciseScreenOffWakeLockDecisionReason != currentReason) {
+            LoggerX.d(
+                tag,
+                "updatePreciseScreenOffWakeLockState: 当前不持有唤醒锁, reason=$currentReason preciseScreenOffRecordEnabled=$preciseScreenOffRecordEnabled screenOffRecord=$screenOffRecord isInteractive=$isInteractive stopped=$stopped"
+            )
+            lastPreciseScreenOffWakeLockDecisionReason = currentReason
+        }
+    }
+
+    /**
+     * 释放当前已持有的精确息屏记录唤醒锁。
+     *
+     * @param reason 本次释放的直接原因，用于日志定位。
+     * @return 无；若尚未创建或当前未持锁则直接返回。
+     */
+    @Synchronized
+    private fun releasePreciseScreenOffWakeLockIfHeld(reason: String) {
+        val wakeLock = preciseScreenOffWakeLock ?: return
+        if (!wakeLock.isHeld) return
+        LoggerX.d(tag, "releasePreciseScreenOffWakeLockIfHeld: 准备释放唤醒锁, reason=$reason")
+        wakeLock.release()
+        if (!wakeLock.isHeld) {
+            LoggerX.i(tag, "releasePreciseScreenOffWakeLockIfHeld: 已释放唤醒锁, reason=$reason")
+        } else {
+            LoggerX.w(tag, "releasePreciseScreenOffWakeLockIfHeld: release() 返回后仍处于持有状态, reason=$reason")
+        }
+    }
+
+    /**
+     * 获取精确息屏记录使用的部分唤醒锁实例。
+     *
+     * 初始化失败时仅记录错误，并在当前 Server 生命周期内静默禁用该功能，避免在回调线程反复抛异常。
+     *
+     * @return 返回单例 `PARTIAL_WAKE_LOCK`；当前服务已禁用该能力时返回 `null`。
+     */
+    private fun requirePreciseScreenOffWakeLock(): PowerManager.WakeLock? {
+        if (preciseScreenOffWakeLockDisabledForCurrentServer) {
+            LoggerX.d(tag, "requirePreciseScreenOffWakeLock: 当前服务已禁用精确息屏记录，跳过唤醒锁初始化")
+            return null
+        }
+        preciseScreenOffWakeLock?.let {
+            LoggerX.d(
+                tag,
+                "requirePreciseScreenOffWakeLock: 复用已有唤醒锁实例, held=${it.isHeld}"
+            )
+            return it
+        }
+        try {
+            LoggerX.d(tag, "requirePreciseScreenOffWakeLock: 开始创建唤醒锁实例")
+            LoggerX.d(tag, "requirePreciseScreenOffWakeLock: 开始获取 systemContext")
+            val systemContext = FakeContext.systemContext
+            LoggerX.d(tag, "requirePreciseScreenOffWakeLock: 获取 systemContext 成功, context=${systemContext.javaClass.name}")
+            LoggerX.d(tag, "requirePreciseScreenOffWakeLock: 开始获取 PowerManager")
+            val powerManager = systemContext.getSystemService(PowerManager::class.java)
+                ?: throw IllegalStateException("获取 PowerManager 失败")
+            LoggerX.d(tag, "requirePreciseScreenOffWakeLock: 获取 PowerManager 成功, service=${powerManager.javaClass.name}")
+            LoggerX.d(tag, "requirePreciseScreenOffWakeLock: 开始调用 newWakeLock, tag=$PRECISE_SCREEN_OFF_WAKE_LOCK_TAG")
+            return powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                PRECISE_SCREEN_OFF_WAKE_LOCK_TAG
+            ).apply {
+                setReferenceCounted(false)
+                preciseScreenOffWakeLock = this
+                LoggerX.d(
+                    tag,
+                    "requirePreciseScreenOffWakeLock: 唤醒锁实例创建完成, tag=$PRECISE_SCREEN_OFF_WAKE_LOCK_TAG held=$isHeld"
+                )
+            }
+        } catch (t: Throwable) {
+            LoggerX.e(tag, "requirePreciseScreenOffWakeLock: 创建唤醒锁失败", tr = t)
+            preciseScreenOffWakeLockDisabledForCurrentServer = true
+            preciseScreenOffWakeLock = null
+            LoggerX.w(tag, "requirePreciseScreenOffWakeLock: 当前服务已静默禁用精确息屏记录")
+            return null
+        }
+    }
+
     companion object {
         private const val POWER_SCALE_DIVISOR = 1_000_000_000_000.0
+        private const val PRECISE_SCREEN_OFF_WAKE_LOCK_TAG = "BatteryRecorder:PreciseScreenOffRecord"
 
         fun computeNotificationPowerMultiplier(
             dualCellEnabled: Boolean,
