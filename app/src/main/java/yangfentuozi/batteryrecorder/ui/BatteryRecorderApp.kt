@@ -17,6 +17,7 @@ import androidx.navigation.compose.rememberNavController
 import yangfentuozi.batteryrecorder.BuildConfig
 import yangfentuozi.batteryrecorder.R
 import yangfentuozi.batteryrecorder.shared.util.LoggerX
+import yangfentuozi.batteryrecorder.ui.dialog.home.DocsIntroDialog
 import yangfentuozi.batteryrecorder.ui.guide.STARTUP_PROMPT_PREFS
 import yangfentuozi.batteryrecorder.ui.dialog.home.UpdateDialog
 import yangfentuozi.batteryrecorder.ui.guide.KEY_STARTUP_GUIDE_COMPLETED_V2
@@ -29,6 +30,7 @@ import yangfentuozi.batteryrecorder.utils.AppUpdate
 import yangfentuozi.batteryrecorder.utils.UpdateUtils
 
 private const val TAG = "BatteryRecorderApp"
+private const val KEY_DOCS_INTRO_SHOWN = "docs_intro_shown"
 
 @Composable
 fun BatteryRecorderApp(
@@ -44,12 +46,16 @@ fun BatteryRecorderApp(
     var hasCheckedUpdateOnStartup by rememberSaveable { mutableStateOf(false) }
     var pendingUpdate by remember { mutableStateOf<AppUpdate?>(null) }
     var showStartupGuide by rememberSaveable { mutableStateOf<Boolean?>(null) }
+    var showDocsIntro by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(settingsViewModel, context) {
         settingsViewModel.init(context)
         val startupGuideCompleted = startupPrefs.getBoolean(KEY_STARTUP_GUIDE_COMPLETED_V2, false)
+        val docsIntroShown = startupPrefs.getBoolean(KEY_DOCS_INTRO_SHOWN, false)
         showStartupGuide = !startupGuideCompleted
+        showDocsIntro = !docsIntroShown
         LoggerX.v(TAG, "首次启动引导状态: completed=$startupGuideCompleted")
+        LoggerX.v(TAG, "文档引导弹窗状态: shown=$docsIntroShown")
     }
 
     LaunchedEffect(
@@ -114,10 +120,22 @@ fun BatteryRecorderApp(
     }
 
     pendingUpdate?.let { update ->
-        if (shouldShowStartupGuide == true) return@let
+        if (shouldShowStartupGuide == true || showDocsIntro) return@let
         UpdateDialog(
             update = update,
             onDismiss = { pendingUpdate = null }
+        )
+    }
+
+    if (shouldShowStartupGuide != true && showDocsIntro) {
+        DocsIntroDialog(
+            onOpenDocs = {
+                startupPrefs.edit {
+                    putBoolean(KEY_DOCS_INTRO_SHOWN, true)
+                }
+                LoggerX.i(TAG, "[引导] 文档引导弹窗已完成")
+                showDocsIntro = false
+            }
         )
     }
 }

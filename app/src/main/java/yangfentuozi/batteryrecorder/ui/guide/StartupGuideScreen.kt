@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Dispatchers
@@ -120,28 +121,9 @@ fun StartupGuideScreen(
         mutableStateOf(calibrationDetector.snapshot())
     }
 
-    DisposableEffect(appContext) {
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                val rawStatus = intent?.getIntExtra(
-                    BatteryManager.EXTRA_STATUS,
-                    BatteryManager.BATTERY_STATUS_UNKNOWN
-                ) ?: BatteryManager.BATTERY_STATUS_UNKNOWN
-                calibrationDetectionState = calibrationDetectionState.withObservedStatus(
-                    BatteryStatus.fromValue(rawStatus)
-                )
-            }
-        }
-        val initialIntent = ContextCompat.registerReceiver(
-            appContext,
-            receiver,
-            IntentFilter(Intent.ACTION_BATTERY_CHANGED),
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
-        receiver.onReceive(appContext, initialIntent)
-        onDispose {
-            appContext.unregisterReceiver(receiver)
-        }
+    // 把外部状态源拆成具名副作用块，主流程只负责拼装引导状态与页面切换。
+    ObserveStartupGuideBatteryStatus(appContext = appContext) { status ->
+        calibrationDetectionState = calibrationDetector.observeStatus(status)
     }
 
     val recordListener = remember(calibrationDetector, settingsViewModel, scope) {
@@ -152,20 +134,19 @@ fun StartupGuideScreen(
                 status: BatteryStatus,
                 temp: Int
             ) {
+                // IRecordListener 回调来自 Binder 线程，这里统一切回主线程再更新 Compose state 和设置项。
                 scope.launch(Dispatchers.Main.immediate) {
-                    val previousState = calibrationDetectionState
-                    val calibrationToApply = calibrationDetector.onSample(
+                    val result = calibrationDetector.onSample(
                         status = status,
                         power = power,
                         currentCalibrationValue = latestCalibrationValue
                     )
-                    val nextState = calibrationDetector.snapshot()
-                    calibrationDetectionState = nextState
-                    calibrationToApply?.let { detectedValue ->
+                    calibrationDetectionState = result.state
+                    result.calibrationToApply?.let { detectedValue ->
                         LoggerX.i(TAG, "[引导] 自动应用校准倍率: calibration=$detectedValue")
                         settingsViewModel.setCalibrationValue(detectedValue)
                     }
-                    if (!previousState.isCompleted && nextState.isCompleted) {
+                    if (result.completedNow) {
                         LoggerX.i(TAG, "[引导] 电流校准自动探测完成")
                     }
                 }
@@ -175,55 +156,22 @@ fun StartupGuideScreen(
         }
     }
 
-    DisposableEffect(Unit) {
-        val listener = object : Service.ServiceConnection {
-            override fun onServiceConnected() {
-                scope.launch(Dispatchers.Main.immediate) {
-                    LoggerX.i(TAG, "[引导] Binder 已连接")
-                    serviceConnected = true
-                }
-            }
-
-            override fun onServiceDisconnected() {
-                scope.launch(Dispatchers.Main.immediate) {
-                    LoggerX.w(TAG, "[引导] Binder 已断开")
-                    serviceConnected = false
-                }
-            }
+    ObserveStartupGuideServiceConnection { connected ->
+        if (connected) {
+            LoggerX.i(TAG, "[引导] Binder 已连接")
+        } else {
+            LoggerX.w(TAG, "[引导] Binder 已断开")
         }
-        Service.addListener(listener)
-        onDispose {
-            Service.removeListener(listener)
-        }
+        serviceConnected = connected
     }
 
     val shouldObserveCalibrationSamples = currentStep == StartupGuideStep.CALIBRATION
-    DisposableEffect(lifecycleOwner, shouldObserveCalibrationSamples, serviceConnected, recordListener) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_START -> {
-                    if (shouldObserveCalibrationSamples && serviceConnected) {
-                        Service.service?.registerRecordListener(recordListener)
-                    }
-                }
-
-                Lifecycle.Event.ON_STOP -> Service.service?.unregisterRecordListener(recordListener)
-                else -> {}
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        if (
-            lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
-            shouldObserveCalibrationSamples &&
-            serviceConnected
-        ) {
-            Service.service?.registerRecordListener(recordListener)
-        }
-        onDispose {
-            Service.service?.unregisterRecordListener(recordListener)
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
+    ObserveStartupGuideCalibrationSamples(
+        lifecycleOwner = lifecycleOwner,
+        enabled = shouldObserveCalibrationSamples,
+        serviceConnected = serviceConnected,
+        recordListener = recordListener
+    )
 
     val nextEnabled = when (currentStep) {
         StartupGuideStep.INTRO -> true
@@ -721,4 +669,97 @@ private fun copyCommand(context: Context, command: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText("command", command))
     Toast.makeText(context, context.getString(R.string.adb_guide_copied), Toast.LENGTH_SHORT).show()
+}
+
+@Composable
+private fun ObserveStartupGuideBatteryStatus(
+    appContext: Context,
+    onStatusObserved: (BatteryStatus) -> Unit
+) {
+    DisposableEffect(appContext) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val rawStatus = intent?.getIntExtra(
+                    BatteryManager.EXTRA_STATUS,
+                    BatteryManager.BATTERY_STATUS_UNKNOWN
+                ) ?: BatteryManager.BATTERY_STATUS_UNKNOWN
+                onStatusObserved(BatteryStatus.fromValue(rawStatus))
+            }
+        }
+        // ACTION_BATTERY_CHANGED 是粘性广播，注册返回值就是当前快照，避免首次进入时先显示一拍旧状态。
+        val initialIntent = ContextCompat.registerReceiver(
+            appContext,
+            receiver,
+            IntentFilter(Intent.ACTION_BATTERY_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        receiver.onReceive(appContext, initialIntent)
+        onDispose {
+            appContext.unregisterReceiver(receiver)
+        }
+    }
+}
+
+@Composable
+private fun ObserveStartupGuideServiceConnection(
+    onConnectionChanged: (Boolean) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    DisposableEffect(Unit) {
+        // Service 的监听回调可能来自 Binder/DeathRecipient 线程，线程切换收口在这里，避免主流程再包一层 launch。
+        val listener = object : Service.ServiceConnection {
+            override fun onServiceConnected() {
+                scope.launch(Dispatchers.Main.immediate) {
+                    onConnectionChanged(true)
+                }
+            }
+
+            override fun onServiceDisconnected() {
+                scope.launch(Dispatchers.Main.immediate) {
+                    onConnectionChanged(false)
+                }
+            }
+        }
+        Service.addListener(listener)
+        onDispose {
+            Service.removeListener(listener)
+        }
+    }
+}
+
+@Composable
+private fun ObserveStartupGuideCalibrationSamples(
+    lifecycleOwner: LifecycleOwner,
+    enabled: Boolean,
+    serviceConnected: Boolean,
+    recordListener: IRecordListener
+) {
+    DisposableEffect(lifecycleOwner, enabled, serviceConnected, recordListener) {
+        // 只在校准步骤且页面处于前台时订阅采样，避免引导切页后继续持有监听器。
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> {
+                    if (enabled && serviceConnected) {
+                        Service.service?.registerRecordListener(recordListener)
+                    }
+                }
+
+                Lifecycle.Event.ON_STOP -> Service.service?.unregisterRecordListener(recordListener)
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        if (
+            lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+            enabled &&
+            serviceConnected
+        ) {
+            // DisposableEffect 可能创建于页面已经 STARTED 之后，这里补一次即时注册，避免错过当前会话采样。
+            Service.service?.registerRecordListener(recordListener)
+        }
+        onDispose {
+            Service.service?.unregisterRecordListener(recordListener)
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 }

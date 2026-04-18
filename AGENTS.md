@@ -18,7 +18,7 @@ BatteryRecorder 是一个 Android 电池功率记录 App。
 - root 模式下主 `Server` 会额外派生独立的 `NotificationServer` 子进程，并通过本地 socket 转发实时通知
 - App 更新时，root 模式 `Server` 会监听 APK sourceDir 变化并自动拉起新的 `libstarter.so`；新旧 `Server` 会尝试交接当前记录写入状态以续接记录
 - 历史数据支持图表查看、应用维度统计、场景维度统计、记录详情统计与续航预测
-- 应用启动阶段还负责首次文档引导与更新检查；更新检查当前支持“稳定版 / 预发布”两种通道，更新弹窗支持浏览器打开或走系统 `DownloadManager` 下载安装；首页同时提供 Root/ADB 启动入口、记录清理与日志导出
+- 应用启动阶段还负责首次启动引导、文档引导与更新检查；启动引导与文档引导是两条独立链路，前者由 `StartupGuideScreen` 承载，后者应保持独立弹窗形态；更新检查当前支持“稳定版 / 预发布”两种通道，更新弹窗支持浏览器打开或走系统 `DownloadManager` 下载安装；首页同时提供 Root/ADB 启动入口、记录清理与日志导出
 
 ## 构建约束
 
@@ -132,7 +132,7 @@ Sampler -> SysfsSampler / DumpsysSampler -> Monitor -> PowerRecordWriter -> CSV
 - 记录清理规则分为“每类最多保留 N 条”和“条件清理”；条件清理当前对已启用条件采用 AND 语义，即必须同时满足所有已启用条件才会删除记录
 - 记录清理直接由 `HistoryRepository.cleanupRecords(...)` 扫描物理记录文件并执行删除，不复用历史页分页列表状态
 - 条件清理当前只对可成功解析统计的记录生效；文件名非法或统计解析失败的记录会记日志并跳过，不会在 UI 中作为单独规则暴露
-- 首页支持 Root 启动卡片、ADB 引导、记录清理、日志导出、关于弹窗、首次文档引导与启动更新检查
+- 首页支持 Root 启动卡片、ADB 引导、记录清理、日志导出、关于弹窗、文档引导弹窗与启动更新检查；不要把文档引导并入 `StartupGuideScreen`
 - 启动更新检查由 `BatteryRecorderApp` 直接触发；稳定版通道走 GitHub `releases/latest`，预发布通道走 `releases` 列表并取最新非 draft 发布，因此向下兼容稳定版
 - 更新弹窗由 `ui/dialog/home/UpdateDialog.kt` 渲染，版本信息会附带当前通道标识
 - 更新弹窗支持“浏览器打开”和“直接下载”两条路径；直接下载走 `AppDownloader` + `DownloadManager`，并通过 `FileProvider` 与下载完成广播触发安装
@@ -263,6 +263,7 @@ docs/
 |---------------------------|------------------------------------------------------------------------------------------------------------------|
 | App 进程入口                  | `app/.../App.kt`                                                                                                 |
 | App 入口 Composable         | `app/.../ui/BatteryRecorderApp.kt`                                                                               |
+| 首次启动引导页                  | `app/.../ui/guide/StartupGuideScreen.kt`                                                                         |
 | Activity Edge-to-Edge 入口  | `app/.../ui/BaseActivity.kt`                                                                                     |
 | 页面级 Insets 公共方法           | `app/.../ui/EdgeToEdgeInsets.kt`                                                                                 |
 | 导航路由                      | `app/.../ui/navigation/NavRoute.kt`                                                                              |
@@ -329,6 +330,7 @@ docs/
 
 - `MainViewModel` 与 `SettingsViewModel` 在 `BatteryRecorderApp` 创建并向下传递
 - `SettingsViewModel.init(context)` 在应用入口阶段完成 SharedPreferences 初始化
+- `BatteryRecorderApp` 当前通过 `STARTUP_PROMPT_PREFS` + `KEY_STARTUP_GUIDE_COMPLETED_V2` 判断启动引导是否完成；文档引导应保持独立弹窗入口，不要把两类 onboarding 合并成同一条状态链路
 - `HistoryViewModel` 在 `BatteryRecorderNavHost` 创建共享实例，不是“每个历史页面各建一个”
 - 首页当前记录卡片、实时曲线与等待态统一由 `MainViewModel.currentRecordUiState` 提供
 - `HomeScreen` 会同时监听 `ACTION_BATTERY_CHANGED` 与 `IRecordListener`；前者提供当前电量/电压，后者提供实时功率与当前记录切段事件

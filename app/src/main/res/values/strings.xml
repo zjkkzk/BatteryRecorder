@@ -213,6 +213,9 @@
     <string name="startup_guide_calibration_completed_hint">Auto detection completed.</string>
     <string name="startup_guide_calibration_locked_hint">Manual calibration is available only after auto detection completes.</string>
     <string name="startup_guide_adjust_calibration">Adjust calibration manually</string>
+    <string name="docs_intro_title">Read the docs before first use</string>
+    <string name="docs_intro_message">Please read the user guide before continuing.\nThe docs cover startup methods, calibration, excluding high-load apps, prediction, history gestures, and chart interactions.</string>
+    <string name="docs_intro_open">Open user guide</string>
 
     <string name="about_view_source">GitHub</string>
     <string name="about_telegram">Telegram</string>

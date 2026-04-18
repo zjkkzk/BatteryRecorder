@@ -28,12 +28,11 @@ internal data class StartupPowerCalibrationUiState(
     val isCompleted: Boolean = false
 )
 
-internal fun StartupPowerCalibrationUiState.withObservedStatus(
-    status: BatteryStatus
-): StartupPowerCalibrationUiState {
-    if (lastStatus == status) return this
-    return copy(lastStatus = status)
-}
+internal data class StartupPowerCalibrationSampleResult(
+    val state: StartupPowerCalibrationUiState,
+    val calibrationToApply: Int? = null,
+    val completedNow: Boolean = false
+)
 
 /**
  * 解析当前自动探测 UI 应展示的阶段。
@@ -77,6 +76,21 @@ internal class StartupGuidePowerCalibrationDetector(
     fun snapshot(): StartupPowerCalibrationUiState = state
 
     /**
+     * 仅根据外部观测到的电池状态刷新 UI 状态。
+     *
+     * 这个入口只负责把 `ACTION_BATTERY_CHANGED` 之类的状态同步到引导页，
+     * 不参与校准推断，也不会改动候选倍率与连续计数。
+     *
+     * @param status 当前观测到的电池状态。
+     * @return 返回更新后的 UI 状态。
+     */
+    fun observeStatus(status: BatteryStatus): StartupPowerCalibrationUiState {
+        if (state.lastStatus == status) return state
+        state = state.copy(lastStatus = status)
+        return state
+    }
+
+    /**
      * 消费一条实时功率样本并推进探测状态。
      *
      * 只有放电态样本才参与推断；其余状态会清空当前连续计数，但不会回滚完成标记。
@@ -84,16 +98,16 @@ internal class StartupGuidePowerCalibrationDetector(
      * @param status 当前电池状态。
      * @param power 当前回调里的原始功率值。
      * @param currentCalibrationValue 当前已保存的校准倍率。
-     * @return 返回本次是否需要自动写入倍率；最新状态通过 [snapshot] 读取。
+     * @return 返回本次样本处理后的完整结果。
      */
     fun onSample(
         status: BatteryStatus,
         power: Long,
         currentCalibrationValue: Int
-    ): Int? {
+    ): StartupPowerCalibrationSampleResult {
         if (state.isCompleted) {
             state = state.copy(lastStatus = status)
-            return null
+            return StartupPowerCalibrationSampleResult(state = state)
         }
 
         if (status != BatteryStatus.Discharging || power == 0L) {
@@ -102,7 +116,7 @@ internal class StartupGuidePowerCalibrationDetector(
                 candidate = null,
                 stableCount = 0
             )
-            return null
+            return StartupPowerCalibrationSampleResult(state = state)
         }
 
         val candidate = inferCalibrationValue(power)
@@ -123,9 +137,14 @@ internal class StartupGuidePowerCalibrationDetector(
             stableCount = nextStableCount,
             isCompleted = completedNow
         )
-        return candidate.takeIf {
+        val calibrationToApply = candidate.takeIf {
             nextStableCount == APPLY_STABLE_COUNT && currentCalibrationValue != it
         }
+        return StartupPowerCalibrationSampleResult(
+            state = state,
+            calibrationToApply = calibrationToApply,
+            completedNow = completedNow
+        )
     }
 
     /**
