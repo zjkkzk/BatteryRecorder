@@ -3,7 +3,6 @@ package yangfentuozi.batteryrecorder.ui.guide
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -38,7 +37,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -47,6 +45,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,12 +56,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.net.toUri
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import yangfentuozi.batteryrecorder.R
 import yangfentuozi.batteryrecorder.ipc.Service
+import yangfentuozi.batteryrecorder.server.recorder.IRecordListener
 import yangfentuozi.batteryrecorder.shared.config.SettingsConstants
+import yangfentuozi.batteryrecorder.shared.data.BatteryStatus
+import yangfentuozi.batteryrecorder.shared.data.RecordsFile
 import yangfentuozi.batteryrecorder.shared.util.LoggerX
 import yangfentuozi.batteryrecorder.startup.RootServerStarter
 import yangfentuozi.batteryrecorder.ui.dialog.settings.CalibrationDialog
@@ -71,7 +75,6 @@ import yangfentuozi.batteryrecorder.ui.viewmodel.SettingsViewModel
 import yangfentuozi.batteryrecorder.utils.batteryRecorderScaffoldInsets
 
 private const val TAG = "StartupGuideScreen"
-private const val DOCS_URL = "https://battrec.itosang.com"
 
 private data class AdbCommandItem(
     val title: String,
@@ -94,11 +97,51 @@ fun StartupGuideScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val lifecycleOwner = LocalLifecycleOwner.current
     val dualCellEnabled by settingsViewModel.dualCellEnabled.collectAsState()
     val calibrationValue by settingsViewModel.calibrationValue.collectAsState()
+    val latestCalibrationValue by rememberUpdatedState(calibrationValue)
     var currentStep by rememberSaveable { mutableStateOf(StartupGuideStep.INTRO) }
     var serviceConnected by rememberSaveable { mutableStateOf(Service.service != null) }
     var showCalibrationDialog by rememberSaveable { mutableStateOf(false) }
+    val startupPrefs = remember(context.applicationContext) {
+        getStartupGuidePreferences(context.applicationContext)
+    }
+    val calibrationDetector = remember(startupPrefs) {
+        StartupGuidePowerCalibrationDetector(startupPrefs)
+    }
+    var calibrationDetectionState by remember {
+        mutableStateOf(calibrationDetector.snapshot())
+    }
+
+    val recordListener = remember(calibrationDetector, settingsViewModel, scope) {
+        object : IRecordListener.Stub() {
+            override fun onRecord(
+                timestamp: Long,
+                power: Long,
+                status: BatteryStatus,
+                temp: Int
+            ) {
+                scope.launch(Dispatchers.Main.immediate) {
+                    val result = calibrationDetector.onSample(
+                        status = status,
+                        power = power,
+                        currentCalibrationValue = latestCalibrationValue
+                    )
+                    calibrationDetectionState = result.state
+                    result.calibrationToApply?.let { detectedValue ->
+                        LoggerX.i(TAG, "[引导] 自动应用校准倍率: calibration=$detectedValue")
+                        settingsViewModel.setCalibrationValue(detectedValue)
+                    }
+                    if (result.completedNow) {
+                        LoggerX.i(TAG, "[引导] 电流校准自动探测完成")
+                    }
+                }
+            }
+
+            override fun onChangedCurrRecordsFile(recordsFile: RecordsFile) = Unit
+        }
+    }
 
     DisposableEffect(Unit) {
         val listener = object : Service.ServiceConnection {
@@ -122,10 +165,38 @@ fun StartupGuideScreen(
         }
     }
 
+    val shouldObserveCalibrationSamples = currentStep == StartupGuideStep.CALIBRATION
+    DisposableEffect(lifecycleOwner, shouldObserveCalibrationSamples, serviceConnected, recordListener) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> {
+                    if (shouldObserveCalibrationSamples && serviceConnected) {
+                        Service.service?.registerRecordListener(recordListener)
+                    }
+                }
+
+                Lifecycle.Event.ON_STOP -> Service.service?.unregisterRecordListener(recordListener)
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        if (
+            lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+            shouldObserveCalibrationSamples &&
+            serviceConnected
+        ) {
+            Service.service?.registerRecordListener(recordListener)
+        }
+        onDispose {
+            Service.service?.unregisterRecordListener(recordListener)
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     val nextEnabled = when (currentStep) {
         StartupGuideStep.INTRO -> true
         StartupGuideStep.START_SERVICE -> serviceConnected
-        StartupGuideStep.CALIBRATION -> true
+        StartupGuideStep.CALIBRATION -> calibrationDetectionState.isCompleted
     }
 
     Scaffold(
@@ -172,11 +243,7 @@ fun StartupGuideScreen(
                 label = "startup_guide_step_transition"
             ) { step ->
                 when (step) {
-                    StartupGuideStep.INTRO -> IntroContent(
-                        onOpenDocs = {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, DOCS_URL.toUri()))
-                        }
-                    )
+                    StartupGuideStep.INTRO -> IntroContent()
 
                     StartupGuideStep.START_SERVICE -> StartServiceContent(
                         serviceConnected = serviceConnected,
@@ -195,6 +262,7 @@ fun StartupGuideScreen(
                         dualCellEnabled = dualCellEnabled,
                         calibrationValue = calibrationValue,
                         serviceConnected = serviceConnected,
+                        calibrationDetectionState = calibrationDetectionState,
                         onDualCellChange = settingsViewModel::setDualCellEnabled,
                         onAdjustCalibration = { showCalibrationDialog = true }
                     )
@@ -222,9 +290,7 @@ fun StartupGuideScreen(
 }
 
 @Composable
-private fun IntroContent(
-    onOpenDocs: () -> Unit
-) {
+private fun IntroContent() {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -266,10 +332,6 @@ private fun IntroContent(
                 description = stringResource(R.string.startup_guide_feature_calibration_desc)
             )
         }
-//        Spacer(Modifier.height(28.dp))
-//        TextButton(onClick = onOpenDocs) {
-//            Text(stringResource(R.string.startup_guide_open_docs))
-//        }
     }
 }
 
@@ -418,9 +480,11 @@ private fun CalibrationContent(
     dualCellEnabled: Boolean,
     calibrationValue: Int,
     serviceConnected: Boolean,
+    calibrationDetectionState: StartupPowerCalibrationUiState,
     onDualCellChange: (Boolean) -> Unit,
     onAdjustCalibration: () -> Unit
 ) {
+    val phase = calibrationDetectionState.resolvePhase(serviceConnected)
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -443,6 +507,72 @@ private fun CalibrationContent(
             textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(28.dp))
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = AppShape.large,
+            tonalElevation = 2.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.startup_guide_detection_title),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = when (phase) {
+                        StartupPowerCalibrationPhase.WaitingForService ->
+                            stringResource(R.string.startup_guide_detection_wait_service)
+
+                        StartupPowerCalibrationPhase.RemoveCharger ->
+                            stringResource(R.string.startup_guide_detection_remove_charger)
+
+                        StartupPowerCalibrationPhase.WaitingForDischarge ->
+                            stringResource(R.string.startup_guide_detection_wait_discharge)
+
+                        StartupPowerCalibrationPhase.Detecting ->
+                            stringResource(R.string.startup_guide_detection_running)
+
+                        StartupPowerCalibrationPhase.Completed ->
+                            stringResource(R.string.startup_guide_detection_completed)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (phase == StartupPowerCalibrationPhase.Detecting) {
+                    Text(
+                        text = calibrationDetectionState.candidate?.let {
+                            stringResource(
+                                R.string.startup_guide_detection_candidate_value,
+                                it
+                            )
+                        } ?: stringResource(R.string.startup_guide_detection_candidate_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.startup_guide_detection_stable_count,
+                            calibrationDetectionState.stableCount
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (phase == StartupPowerCalibrationPhase.Completed) {
+                    Text(
+                        text = stringResource(
+                            R.string.startup_guide_detection_result_value,
+                            calibrationValue
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(18.dp))
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = AppShape.large,
@@ -496,16 +626,17 @@ private fun CalibrationContent(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = if (serviceConnected) {
-                        stringResource(R.string.startup_guide_calibration_connected_hint)
+                    text = if (calibrationDetectionState.isCompleted) {
+                        stringResource(R.string.startup_guide_calibration_completed_hint)
                     } else {
-                        stringResource(R.string.startup_guide_calibration_disconnected_hint)
+                        stringResource(R.string.startup_guide_calibration_locked_hint)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Button(
                     onClick = onAdjustCalibration,
+                    enabled = calibrationDetectionState.isCompleted,
                     shape = AppShape.SplicedGroup.single
                 ) {
                     Text(stringResource(R.string.startup_guide_adjust_calibration))

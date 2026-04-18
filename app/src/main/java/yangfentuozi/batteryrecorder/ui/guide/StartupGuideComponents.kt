@@ -106,7 +106,7 @@ internal fun StartupGuideBottomBar(
                 shape = AppShape.large
             ) {
                 Text(
-                    text = stringResource(R.string.common_next),
+                    text = stringResource(R.string.startup_guide_action_next),
                     fontSize = 16.sp
                 )
                 Spacer(Modifier.width(8.dp))
@@ -132,7 +132,7 @@ internal fun StartupGuideBottomBar(
                         contentDescription = null
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.common_back), fontSize = 16.sp)
+                    Text(stringResource(R.string.startup_guide_action_back), fontSize = 16.sp)
                 }
                 Button(
                     onClick = onNext,
@@ -145,9 +145,9 @@ internal fun StartupGuideBottomBar(
                     val isLastStep = currentStep == StartupGuideStep.CALIBRATION
                     Text(
                         text = if (isLastStep) {
-                            stringResource(R.string.common_finish)
+                            stringResource(R.string.startup_guide_action_finish)
                         } else {
-                            stringResource(R.string.common_next)
+                            stringResource(R.string.startup_guide_action_next)
                         },
                         fontSize = 16.sp
                     )

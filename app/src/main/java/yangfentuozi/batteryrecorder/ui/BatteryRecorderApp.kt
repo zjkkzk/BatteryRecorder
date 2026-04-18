@@ -1,6 +1,5 @@
 package yangfentuozi.batteryrecorder.ui
 
-import android.content.Context
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -18,7 +17,9 @@ import yangfentuozi.batteryrecorder.BuildConfig
 import yangfentuozi.batteryrecorder.R
 import yangfentuozi.batteryrecorder.shared.util.LoggerX
 import yangfentuozi.batteryrecorder.ui.dialog.home.UpdateDialog
+import yangfentuozi.batteryrecorder.ui.guide.KEY_STARTUP_GUIDE_COMPLETED_V2
 import yangfentuozi.batteryrecorder.ui.guide.StartupGuideScreen
+import yangfentuozi.batteryrecorder.ui.guide.getStartupGuidePreferences
 import yangfentuozi.batteryrecorder.ui.navigation.BatteryRecorderNavHost
 import yangfentuozi.batteryrecorder.ui.viewmodel.MainViewModel
 import yangfentuozi.batteryrecorder.ui.viewmodel.SettingsViewModel
@@ -27,9 +28,6 @@ import yangfentuozi.batteryrecorder.utils.AppUpdate
 import yangfentuozi.batteryrecorder.utils.UpdateUtils
 
 private const val TAG = "BatteryRecorderApp"
-
-private const val STARTUP_PROMPT_PREFS = "startup_prompt"
-private const val KEY_STARTUP_GUIDE_COMPLETED_V2 = "startup_guide_completed_v2"
 
 @Composable
 fun BatteryRecorderApp(
@@ -45,7 +43,7 @@ fun BatteryRecorderApp(
 
     LaunchedEffect(settingsViewModel, context) {
         settingsViewModel.init(context)
-        val startupPrefs = context.getSharedPreferences(STARTUP_PROMPT_PREFS, Context.MODE_PRIVATE)
+        val startupPrefs = getStartupGuidePreferences(context)
         val startupGuideCompleted = startupPrefs.getBoolean(KEY_STARTUP_GUIDE_COMPLETED_V2, false)
         showStartupGuide = !startupGuideCompleted
         LoggerX.v(TAG, "首次启动引导状态: completed=$startupGuideCompleted")
@@ -96,7 +94,7 @@ fun BatteryRecorderApp(
         StartupGuideScreen(
             settingsViewModel = settingsViewModel,
             onGuideCompleted = {
-                context.getSharedPreferences(STARTUP_PROMPT_PREFS, Context.MODE_PRIVATE)
+                getStartupGuidePreferences(context)
                     .edit {
                         putBoolean(KEY_STARTUP_GUIDE_COMPLETED_V2, true)
                     }
