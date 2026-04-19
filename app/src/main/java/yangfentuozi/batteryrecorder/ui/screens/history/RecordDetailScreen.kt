@@ -77,7 +77,7 @@ fun RecordDetailScreen(
     val record by viewModel.recordDetail.collectAsState()
     val chartUiState by viewModel.recordChartUiState.collectAsState()
     val recordAppDetailEntries by viewModel.recordAppDetailEntries.collectAsState()
-    val recordDetailPowerUiState by viewModel.recordDetailPowerUiState.collectAsState()
+    val recordDetailPowerUiState by viewModel.recordDetailSummaryUiState.collectAsState()
     val recordDetailReferenceVoltageV by viewModel.recordDetailReferenceVoltageV.collectAsState()
     val isRecordChartLoading by viewModel.isRecordChartLoading.collectAsState()
     val userMessage by viewModel.userMessage.collectAsState()

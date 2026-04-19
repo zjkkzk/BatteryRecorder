@@ -30,7 +30,7 @@ import yangfentuozi.batteryrecorder.shared.data.RecordsFile
 import yangfentuozi.batteryrecorder.shared.util.LoggerX
 import yangfentuozi.batteryrecorder.ui.model.RecordAppDetailUiEntry
 import yangfentuozi.batteryrecorder.ui.model.RecordDetailChartUiState
-import yangfentuozi.batteryrecorder.ui.model.RecordDetailPowerUiState
+import yangfentuozi.batteryrecorder.ui.model.RecordDetailSummaryUiState
 import yangfentuozi.batteryrecorder.utils.computeEnergyWh
 import yangfentuozi.batteryrecorder.utils.computePowerW
 import java.io.File
@@ -61,9 +61,9 @@ class HistoryViewModel : ViewModel() {
     private val _recordAppDetailEntries = MutableStateFlow<List<RecordAppDetailUiEntry>>(emptyList())
     val recordAppDetailEntries: StateFlow<List<RecordAppDetailUiEntry>> =
         _recordAppDetailEntries.asStateFlow()
-    private val _recordDetailPowerUiState = MutableStateFlow<RecordDetailPowerUiState?>(null)
-    val recordDetailPowerUiState: StateFlow<RecordDetailPowerUiState?> =
-        _recordDetailPowerUiState.asStateFlow()
+    private val _recordDetailSummaryUiState = MutableStateFlow<RecordDetailSummaryUiState?>(null)
+    val recordDetailSummaryUiState: StateFlow<RecordDetailSummaryUiState?> =
+        _recordDetailSummaryUiState.asStateFlow()
     private val _recordDetailReferenceVoltageV = MutableStateFlow<Double?>(null)
     val recordDetailReferenceVoltageV: StateFlow<Double?> =
         _recordDetailReferenceVoltageV.asStateFlow()
@@ -827,7 +827,7 @@ class HistoryViewModel : ViewModel() {
         rawRecordDetail = null
         rawRecordDetailPowerStats = null
         _recordDetail.value = null
-        _recordDetailPowerUiState.value = null
+        _recordDetailSummaryUiState.value = null
         _recordDetailReferenceVoltageV.value = null
         recordPoints = emptyList()
         recordLineRecords = emptyList()
@@ -846,7 +846,7 @@ class HistoryViewModel : ViewModel() {
         _recordDetail.value = detail?.let {
             mapHistoryRecordForDisplay(it, detailDischargeDisplayPositive)
         }
-        _recordDetailPowerUiState.value = rawRecordDetailPowerStats?.let { stats ->
+        _recordDetailSummaryUiState.value = rawRecordDetailPowerStats?.let { stats ->
             detail?.type?.let { detailType ->
                 mapRecordDetailPowerUiState(
                     detailType = detailType,
@@ -871,7 +871,7 @@ class HistoryViewModel : ViewModel() {
         stats: RecordDetailPowerStats,
         dischargeDisplayPositive: Boolean,
         appSwitchCount: Int
-    ): RecordDetailPowerUiState {
+    ): RecordDetailSummaryUiState {
         val multiplier = if (
             detailType == BatteryStatus.Discharging &&
             dischargeDisplayPositive
@@ -898,7 +898,7 @@ class HistoryViewModel : ViewModel() {
             dualCellEnabled = dualCellEnabled,
             calibrationValue = calibrationValue
         )
-        return RecordDetailPowerUiState(
+        return RecordDetailSummaryUiState(
             averagePower = stats.averagePowerRaw * multiplier,
             screenOnAveragePower = stats.screenOnAveragePowerRaw?.times(multiplier),
             screenOffAveragePower = stats.screenOffAveragePowerRaw?.times(multiplier),

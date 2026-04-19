@@ -34,7 +34,7 @@ data class RecordAppDetailUiEntry(
 /**
  * 记录详情页顶部功耗摘要状态。
  */
-data class RecordDetailPowerUiState(
+data class RecordDetailSummaryUiState(
     val averagePower: Double,
     val screenOnAveragePower: Double?,
     val screenOffAveragePower: Double?,

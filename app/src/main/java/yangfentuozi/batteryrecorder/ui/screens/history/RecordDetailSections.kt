@@ -54,7 +54,7 @@ import yangfentuozi.batteryrecorder.ui.components.charts.RecordChartCurveVisibil
 import yangfentuozi.batteryrecorder.ui.components.global.SplicedColumnGroup
 import yangfentuozi.batteryrecorder.ui.model.RecordAppDetailUiEntry
 import yangfentuozi.batteryrecorder.ui.model.RecordDetailChartUiState
-import yangfentuozi.batteryrecorder.ui.model.RecordDetailPowerUiState
+import yangfentuozi.batteryrecorder.ui.model.RecordDetailSummaryUiState
 import yangfentuozi.batteryrecorder.ui.theme.AppShape
 import yangfentuozi.batteryrecorder.utils.AppIconMemoryCache
 import yangfentuozi.batteryrecorder.utils.computeEnergyWh
@@ -85,7 +85,7 @@ private const val CHARGING_NEGATIVE_AXIS_DETECTION_IGNORE_PERCENT = 10
 @Composable
 internal fun RecordDetailSummarySection(
     detailState: HistoryRecord?,
-    powerUiState: RecordDetailPowerUiState?,
+    powerUiState: RecordDetailSummaryUiState?,
     chargeDetailBatteryInfoText: String?,
     dualCellEnabled: Boolean,
     calibrationValue: Int,
@@ -160,7 +160,7 @@ internal fun RecordDetailSummarySection(
 @Composable
 private fun ChargingRecordSummaryContent(
     detail: HistoryRecord,
-    powerUiState: RecordDetailPowerUiState?,
+    powerUiState: RecordDetailSummaryUiState?,
     chargeDetailBatteryInfoText: String?,
     dualCellEnabled: Boolean,
     calibrationValue: Int,
@@ -221,7 +221,7 @@ private fun ChargingRecordSummaryContent(
 @Composable
 private fun DischargingRecordSummaryContent(
     detail: HistoryRecord,
-    powerUiState: RecordDetailPowerUiState?,
+    powerUiState: RecordDetailSummaryUiState?,
     dualCellEnabled: Boolean,
     calibrationValue: Int,
     useMahForDischargeDetail: Boolean,
@@ -837,7 +837,7 @@ private fun RecordAppDetailIcon(entry: RecordAppDetailUiEntry) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RecordDetailPowerSection(
-    powerUiState: RecordDetailPowerUiState,
+    powerUiState: RecordDetailSummaryUiState,
     dualCellEnabled: Boolean,
     calibrationValue: Int
 ) {
@@ -932,7 +932,7 @@ private fun formatDetailPowerValue(
 }
 
 private fun buildDetailPowerSummaryText(
-    powerUiState: RecordDetailPowerUiState,
+    powerUiState: RecordDetailSummaryUiState,
     dualCellEnabled: Boolean,
     calibrationValue: Int
 ): String {
