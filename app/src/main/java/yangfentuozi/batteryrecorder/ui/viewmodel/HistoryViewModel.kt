@@ -110,8 +110,12 @@ class HistoryViewModel : ViewModel() {
         if (_isLoading.value) return
         _isLoading.value = true
         val shouldResetChargeFilter = listSession.currentListType != type
+        val shouldClearDisplayedRecords = shouldResetChargeFilter ||
+            !listSession.hasInitializedListContext ||
+            _chargeCapacityChangeFilter.value != null
         val token = listLoadToken + 1
         listLoadToken = token
+        resetListLoadingState(clearDisplayedRecords = shouldClearDisplayedRecords)
         viewModelScope.launch {
             try {
                 val result = if (listSession.currentListType != type || !listSession.hasInitializedListContext) {
@@ -170,10 +174,11 @@ class HistoryViewModel : ViewModel() {
         val normalizedFilter = minCapacityChange?.takeIf { it > 0 }
         if (_chargeCapacityChangeFilter.value == normalizedFilter) return
 
+        _isLoading.value = true
         val token = listLoadToken + 1
         listLoadToken = token
+        resetListLoadingState(clearDisplayedRecords = true)
         viewModelScope.launch {
-            _isLoading.value = true
             try {
                 val result = LoadHistoryListUseCase.applyChargeCapacityChangeFilter(
                     context = context,
@@ -302,6 +307,7 @@ class HistoryViewModel : ViewModel() {
                     )
                     applyHistoryListResult(result)
                     if (_recordDetail.value?.asRecordsFile() == recordsFile) {
+                        invalidateRecordDetailAsyncTasks()
                         clearRecordDetailState()
                     }
                     _userMessage.value = appString(R.string.toast_delete_success)
@@ -416,6 +422,7 @@ class HistoryViewModel : ViewModel() {
         }
         val token = listLoadToken + 1
         listLoadToken = token
+        resetListLoadingState(clearDisplayedRecords = false)
         viewModelScope.launch {
             _isImportExporting.value = true
             try {
@@ -542,6 +549,32 @@ class HistoryViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    /**
+     * 在开启新一轮列表加载前复位瞬时 UI 状态。
+     *
+     * @param clearDisplayedRecords 是否同步清空当前展示列表。
+     * @return 无返回值。
+     */
+    private fun resetListLoadingState(clearDisplayedRecords: Boolean) {
+        _isPaging.value = false
+        if (!clearDisplayedRecords) {
+            return
+        }
+        _records.value = emptyList()
+        _hasMoreRecords.value = false
+    }
+
+    /**
+     * 废弃当前详情页仍在进行中的异步任务，避免旧结果回写。
+     *
+     * @return 无返回值。
+     */
+    private fun invalidateRecordDetailAsyncTasks() {
+        detailLoadToken += 1L
+        chartComputeToken += 1L
+        _isRecordChartLoading.value = false
     }
 
     /**
