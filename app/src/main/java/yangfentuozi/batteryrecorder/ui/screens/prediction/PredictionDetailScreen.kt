@@ -40,8 +40,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import yangfentuozi.batteryrecorder.R
 import yangfentuozi.batteryrecorder.ui.components.global.LazySplicedColumnGroup
+import yangfentuozi.batteryrecorder.ui.model.PredictionDetailUiEntry
 import yangfentuozi.batteryrecorder.ui.theme.AppShape
-import yangfentuozi.batteryrecorder.ui.viewmodel.PredictionDetailUiEntry
 import yangfentuozi.batteryrecorder.ui.viewmodel.PredictionDetailViewModel
 import yangfentuozi.batteryrecorder.ui.viewmodel.SettingsViewModel
 import yangfentuozi.batteryrecorder.utils.AppIconMemoryCache

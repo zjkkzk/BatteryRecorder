@@ -2,7 +2,6 @@ package yangfentuozi.batteryrecorder.ui.viewmodel
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.core.content.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,15 +11,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import yangfentuozi.batteryrecorder.ipc.Service
-import yangfentuozi.batteryrecorder.shared.config.ServerSettingsCodec
-import yangfentuozi.batteryrecorder.shared.config.SettingsConstants
 import yangfentuozi.batteryrecorder.shared.config.SharedSettings
 import yangfentuozi.batteryrecorder.shared.config.dataclass.AppSettings
 import yangfentuozi.batteryrecorder.shared.config.dataclass.ServerSettings
 import yangfentuozi.batteryrecorder.shared.config.dataclass.StatisticsSettings
 import yangfentuozi.batteryrecorder.shared.config.dataclass.UpdateChannel
 import yangfentuozi.batteryrecorder.shared.util.LoggerX
+import yangfentuozi.batteryrecorder.usecase.settings.LoadSettingsUseCase
+import yangfentuozi.batteryrecorder.usecase.settings.UpdateAppSettingsUseCase
+import yangfentuozi.batteryrecorder.usecase.settings.UpdateServerSettingsUseCase
+import yangfentuozi.batteryrecorder.usecase.settings.UpdateStatisticsSettingsUseCase
 
 private const val TAG = "SettingsViewModel"
 
@@ -110,80 +110,87 @@ class SettingsViewModel : ViewModel() {
      * @return 无，直接更新内部 StateFlow。
      */
     private fun loadSettings() {
-        val currentAppSettings = SharedSettings.readAppSettings(prefs)
-        val currentStatisticsSettings = SharedSettings.readStatisticsSettings(prefs)
-        val currentServerSettings = ServerSettingsCodec.readFromPreferences(prefs)
+        val snapshot = LoadSettingsUseCase.execute(prefs)
 
-        _appSettings.value = currentAppSettings
-        _statisticsSettings.value = currentStatisticsSettings
-        _serverSettings.value = currentServerSettings
-        applyLoggerSettings(currentServerSettings)
+        _appSettings.value = snapshot.appSettings
+        _statisticsSettings.value = snapshot.statisticsSettings
+        _serverSettings.value = snapshot.serverSettings
+        applyLoggerSettings(snapshot.serverSettings)
         _initialized.value = true
 
         LoggerX.d(
             TAG,
-            "[设置] loadSettings 完成: notification=${currentServerSettings.notificationEnabled} compatMode=${currentServerSettings.notificationCompatModeEnabled} dualCell=${currentServerSettings.dualCellEnabled} calibration=${currentServerSettings.calibrationValue} intervalMs=${currentServerSettings.recordIntervalMs} writeLatencyMs=${currentServerSettings.writeLatencyMs} batchSize=${currentServerSettings.batchSize} screenOffRecord=${currentServerSettings.screenOffRecordEnabled} preciseScreenOffRecord=${currentServerSettings.preciseScreenOffRecordEnabled} polling=${currentServerSettings.alwaysPollingScreenStatusEnabled} logLevel=${currentServerSettings.logLevel}"
+            "[设置] loadSettings 完成: notification=${snapshot.serverSettings.notificationEnabled} compatMode=${snapshot.serverSettings.notificationCompatModeEnabled} dualCell=${snapshot.serverSettings.dualCellEnabled} calibration=${snapshot.serverSettings.calibrationValue} intervalMs=${snapshot.serverSettings.recordIntervalMs} writeLatencyMs=${snapshot.serverSettings.writeLatencyMs} batchSize=${snapshot.serverSettings.batchSize} screenOffRecord=${snapshot.serverSettings.screenOffRecordEnabled} preciseScreenOffRecord=${snapshot.serverSettings.preciseScreenOffRecordEnabled} polling=${snapshot.serverSettings.alwaysPollingScreenStatusEnabled} logLevel=${snapshot.serverSettings.logLevel}"
         )
     }
 
     fun setCheckUpdateOnStartup(enabled: Boolean) {
         viewModelScope.launch {
-            prefs.edit {
-                SettingsConstants.checkUpdateOnStartup.writeToSP(this, enabled)
-            }
-            _appSettings.value = _appSettings.value.copy(checkUpdateOnStartup = enabled)
+            _appSettings.value = UpdateAppSettingsUseCase.updateCheckUpdateOnStartup(
+                prefs = prefs,
+                current = _appSettings.value,
+                enabled = enabled
+            )
         }
     }
 
     fun setUpdateChannel(channel: UpdateChannel) {
         viewModelScope.launch {
-            prefs.edit {
-                SettingsConstants.updateChannel.writeToSP(this, channel)
-            }
-            _appSettings.value = _appSettings.value.copy(updateChannel = channel)
+            _appSettings.value = UpdateAppSettingsUseCase.updateChannel(
+                prefs = prefs,
+                current = _appSettings.value,
+                channel = channel
+            )
         }
     }
 
     fun setDualCellEnabled(enabled: Boolean) {
-        updateServerSettings(
-            message = "[设置] 更新双电芯模式并准备下发: enabled=$enabled"
-        ) { current ->
-            current.copy(dualCellEnabled = enabled)
+        viewModelScope.launch {
+            _serverSettings.value = UpdateServerSettingsUseCase.updateDualCellEnabled(
+                prefs = prefs,
+                current = _serverSettings.value,
+                enabled = enabled
+            )
         }
     }
 
     fun setDischargeDisplayPositiveEnabled(enabled: Boolean) {
         viewModelScope.launch {
-            prefs.edit {
-                SettingsConstants.dischargeDisplayPositive.writeToSP(this, enabled)
-            }
-            _appSettings.value = _appSettings.value.copy(dischargeDisplayPositive = enabled)
+            _appSettings.value = UpdateAppSettingsUseCase.updateDischargeDisplayPositive(
+                prefs = prefs,
+                current = _appSettings.value,
+                enabled = enabled
+            )
         }
     }
 
     fun setDischargeDetailUseMahEnabled(enabled: Boolean) {
         viewModelScope.launch {
-            prefs.edit {
-                SettingsConstants.dischargeDetailUseMah.writeToSP(this, enabled)
-            }
-            _appSettings.value = _appSettings.value.copy(dischargeDetailUseMah = enabled)
+            _appSettings.value = UpdateAppSettingsUseCase.updateDischargeDetailUseMah(
+                prefs = prefs,
+                current = _appSettings.value,
+                enabled = enabled
+            )
         }
     }
 
     fun setCalibrationValue(value: Int) {
-        val finalValue = SettingsConstants.calibrationValue.coerce(value)
-        updateServerSettings(
-            message = "[设置] 更新电流校准并准备下发: calibration=$finalValue"
-        ) { current ->
-            current.copy(calibrationValue = finalValue)
+        viewModelScope.launch {
+            _serverSettings.value = UpdateServerSettingsUseCase.updateCalibrationValue(
+                prefs = prefs,
+                current = _serverSettings.value,
+                value = value
+            )
         }
     }
 
     fun setNotificationEnabled(enabled: Boolean) {
-        updateServerSettings(
-            message = "[设置] 更新实时通知并准备下发: enabled=$enabled"
-        ) { current ->
-            current.copy(notificationEnabled = enabled)
+        viewModelScope.launch {
+            _serverSettings.value = UpdateServerSettingsUseCase.updateNotificationEnabled(
+                prefs = prefs,
+                current = _serverSettings.value,
+                enabled = enabled
+            )
         }
     }
 
@@ -194,45 +201,52 @@ class SettingsViewModel : ViewModel() {
      * @return 无。
      */
     fun setNotificationCompatModeEnabled(enabled: Boolean) {
-        updateServerSettings(
-            message = "[设置] 更新通知兼容模式并准备下发: enabled=$enabled"
-        ) { current ->
-            current.copy(notificationCompatModeEnabled = enabled)
+        viewModelScope.launch {
+            _serverSettings.value = UpdateServerSettingsUseCase.updateNotificationCompatModeEnabled(
+                prefs = prefs,
+                current = _serverSettings.value,
+                enabled = enabled
+            )
         }
     }
 
     fun setRecordIntervalMs(value: Long) {
-        val finalValue = SettingsConstants.recordIntervalMs.coerce(value)
-        updateServerSettings(
-            message = "[设置] 更新记录间隔并准备下发: intervalMs=$finalValue"
-        ) { current ->
-            current.copy(recordIntervalMs = finalValue)
+        viewModelScope.launch {
+            _serverSettings.value = UpdateServerSettingsUseCase.updateRecordIntervalMs(
+                prefs = prefs,
+                current = _serverSettings.value,
+                value = value
+            )
         }
     }
 
     fun setWriteLatencyMs(value: Long) {
-        val finalValue = SettingsConstants.writeLatencyMs.coerce(value)
-        updateServerSettings(
-            message = "[设置] 更新写入延迟并准备下发: writeLatencyMs=$finalValue"
-        ) { current ->
-            current.copy(writeLatencyMs = finalValue)
+        viewModelScope.launch {
+            _serverSettings.value = UpdateServerSettingsUseCase.updateWriteLatencyMs(
+                prefs = prefs,
+                current = _serverSettings.value,
+                value = value
+            )
         }
     }
 
     fun setBatchSize(value: Int) {
-        val finalValue = SettingsConstants.batchSize.coerce(value)
-        updateServerSettings(
-            message = "[设置] 更新批次大小并准备下发: batchSize=$finalValue"
-        ) { current ->
-            current.copy(batchSize = finalValue)
+        viewModelScope.launch {
+            _serverSettings.value = UpdateServerSettingsUseCase.updateBatchSize(
+                prefs = prefs,
+                current = _serverSettings.value,
+                value = value
+            )
         }
     }
 
     fun setScreenOffRecordEnabled(enabled: Boolean) {
-        updateServerSettings(
-            message = "[设置] 更新息屏记录并准备下发: enabled=$enabled"
-        ) { current ->
-            current.copy(screenOffRecordEnabled = enabled)
+        viewModelScope.launch {
+            _serverSettings.value = UpdateServerSettingsUseCase.updateScreenOffRecordEnabled(
+                prefs = prefs,
+                current = _serverSettings.value,
+                enabled = enabled
+            )
         }
     }
 
@@ -243,139 +257,105 @@ class SettingsViewModel : ViewModel() {
      * @return 无。
      */
     fun setPreciseScreenOffRecordEnabled(enabled: Boolean) {
-        updateServerSettings(
-            message = "[设置] 更新精确息屏记录并准备下发: enabled=$enabled"
-        ) { current ->
-            current.copy(preciseScreenOffRecordEnabled = enabled)
+        viewModelScope.launch {
+            _serverSettings.value = UpdateServerSettingsUseCase.updatePreciseScreenOffRecordEnabled(
+                prefs = prefs,
+                current = _serverSettings.value,
+                enabled = enabled
+            )
         }
     }
 
     fun setAlwaysPollingScreenStatusEnabled(enabled: Boolean) {
-        updateServerSettings(
-            message = "[设置] 更新轮询亮屏状态并准备下发: enabled=$enabled"
-        ) { current ->
-            current.copy(alwaysPollingScreenStatusEnabled = enabled)
+        viewModelScope.launch {
+            _serverSettings.value = UpdateServerSettingsUseCase.updateAlwaysPollingScreenStatusEnabled(
+                prefs = prefs,
+                current = _serverSettings.value,
+                enabled = enabled
+            )
         }
     }
 
     fun setSegmentDurationMin(value: Long) {
-        val finalValue = SettingsConstants.segmentDurationMin.coerce(value)
-        updateServerSettings(
-            message = "[设置] 更新分段时长并准备下发: value=$finalValue"
-        ) { current ->
-            current.copy(segmentDurationMin = finalValue)
+        viewModelScope.launch {
+            _serverSettings.value = UpdateServerSettingsUseCase.updateSegmentDurationMin(
+                prefs = prefs,
+                current = _serverSettings.value,
+                value = value
+            )
         }
     }
 
     fun setRootBootAutoStartEnabled(enabled: Boolean) {
         viewModelScope.launch {
-            prefs.edit {
-                SettingsConstants.rootBootAutoStartEnabled.writeToSP(this, enabled)
-            }
-            _appSettings.value = _appSettings.value.copy(rootBootAutoStartEnabled = enabled)
+            _appSettings.value = UpdateAppSettingsUseCase.updateRootBootAutoStartEnabled(
+                prefs = prefs,
+                current = _appSettings.value,
+                enabled = enabled
+            )
         }
     }
 
     fun setMaxHistoryDays(value: Long) {
-        val finalValue = SettingsConstants.logMaxHistoryDays.coerce(value)
-        updateServerSettings(
-            message = "[设置] 更新日志保留天数并准备下发: maxHistoryDays=$finalValue"
-        ) { current ->
-            current.copy(maxHistoryDays = finalValue)
+        viewModelScope.launch {
+            _serverSettings.value = UpdateServerSettingsUseCase.updateMaxHistoryDays(
+                prefs = prefs,
+                current = _serverSettings.value,
+                value = value
+            )
         }
     }
 
     fun setLogLevel(value: LoggerX.LogLevel) {
-        updateServerSettings(
-            message = "[设置] 更新日志级别并准备下发: logLevel=$value"
-        ) { current ->
-            current.copy(logLevel = value)
+        viewModelScope.launch {
+            _serverSettings.value = UpdateServerSettingsUseCase.updateLogLevel(
+                prefs = prefs,
+                current = _serverSettings.value,
+                value = value
+            )
         }
     }
 
     fun setGamePackages(packages: Set<String>, detectedGamePkgs: Set<String>) {
         viewModelScope.launch {
-            val current = _statisticsSettings.value
-            val newBlacklist = current.gameBlacklist + (detectedGamePkgs - packages)
-            val updated = current.copy(
-                gamePackages = packages,
-                gameBlacklist = newBlacklist
+            _statisticsSettings.value = UpdateStatisticsSettingsUseCase.updateGamePackages(
+                prefs = prefs,
+                current = _statisticsSettings.value,
+                packages = packages,
+                detectedGamePkgs = detectedGamePkgs
             )
-            prefs.edit {
-                SettingsConstants.gamePackages.writeToSP(this, packages)
-                SettingsConstants.gameBlacklist.writeToSP(this, newBlacklist)
-            }
-            _statisticsSettings.value = updated
         }
     }
 
     fun setSceneStatsRecentFileCount(value: Int) {
-        val finalValue = SettingsConstants.sceneStatsRecentFileCount.coerce(value)
         viewModelScope.launch {
-            prefs.edit {
-                SettingsConstants.sceneStatsRecentFileCount.writeToSP(this, finalValue)
-            }
-            _statisticsSettings.value =
-                _statisticsSettings.value.copy(sceneStatsRecentFileCount = finalValue)
+            _statisticsSettings.value = UpdateStatisticsSettingsUseCase.updateSceneStatsRecentFileCount(
+                prefs = prefs,
+                current = _statisticsSettings.value,
+                value = value
+            )
         }
     }
 
     fun setPredWeightedAlgorithmEnabled(enabled: Boolean) {
         viewModelScope.launch {
-            prefs.edit {
-                SettingsConstants.predWeightedAlgorithmEnabled.writeToSP(this, enabled)
-            }
-            _statisticsSettings.value =
-                _statisticsSettings.value.copy(predWeightedAlgorithmEnabled = enabled)
+            _statisticsSettings.value = UpdateStatisticsSettingsUseCase.updatePredWeightedAlgorithmEnabled(
+                prefs = prefs,
+                current = _statisticsSettings.value,
+                enabled = enabled
+            )
         }
     }
 
     fun setPredWeightedAlgorithmAlphaMaxX100(value: Int) {
-        val finalValue = SettingsConstants.predWeightedAlgorithmAlphaMaxX100.coerce(value)
         viewModelScope.launch {
-            prefs.edit {
-                SettingsConstants.predWeightedAlgorithmAlphaMaxX100.writeToSP(this, finalValue)
-            }
             _statisticsSettings.value =
-                _statisticsSettings.value.copy(predWeightedAlgorithmAlphaMaxX100 = finalValue)
+                UpdateStatisticsSettingsUseCase.updatePredWeightedAlgorithmAlphaMaxX100(
+                    prefs = prefs,
+                    current = _statisticsSettings.value,
+                    value = value
+                )
         }
-    }
-
-    /**
-     * 统一处理服务端设置的持久化、内存态回填和运行中下发。
-     *
-     * 当前约束是：
-     * 1. 数值合法化在各个 setter 里完成。
-     * 2. 这里不再额外做总裁剪。
-     * 3. 写盘、内存态和 Binder 下发使用同一份 `ServerSettings`。
-     *
-     * @param message 下发前输出的日志文案。
-     * @param transform 基于当前 `ServerSettings` 构造新配置的转换函数。
-     * @return 无。
-     */
-    private fun updateServerSettings(
-        message: String,
-        transform: (ServerSettings) -> ServerSettings
-    ) {
-        viewModelScope.launch {
-            val updatedSettings = transform(_serverSettings.value)
-            SharedSettings.writeServerSettings(prefs, updatedSettings)
-            _serverSettings.value = updatedSettings
-            applyLoggerSettings(updatedSettings)
-            pushServerConfig(updatedSettings, message)
-        }
-    }
-
-    /**
-     * 将新的 ServerSettings 下发给运行中的服务端。
-     *
-     * @param serverSettings 已经准备好下发的服务端配置。
-     * @param message 本次更新的日志文案。
-     * @return 无；若服务尚未连接，则仅更新本地状态。
-     */
-    private fun pushServerConfig(serverSettings: ServerSettings, message: String) {
-        LoggerX.i(TAG, message)
-        Service.service?.updateConfig(serverSettings)
     }
 
     /**

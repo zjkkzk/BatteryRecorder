@@ -286,6 +286,7 @@
     <string name="toast_delete_success">Deleted successfully</string>
     <string name="toast_delete_failed">Delete failed</string>
     <string name="toast_import_success">Imported successfully, %1$d items</string>
+    <string name="toast_import_partial_success">Import finished: %1$d imported, %2$d invalid records skipped</string>
     <string name="toast_import_failed">Import failed</string>
     <string name="toast_record_file_missing">Record file not found</string>
     <string name="toast_load_record_detail_failed">Failed to load record details</string>

@@ -66,6 +66,20 @@ data class RecordCleanupResult(
     val failedFiles: List<String>
 )
 
+/**
+ * 记录压缩包导入结果。
+ *
+ * @param importedCount 实际成功导入的记录数量。
+ * @param skippedFiles 导入过程中被跳过的异常记录文件名列表。
+ */
+data class ImportRecordsZipResult(
+    val importedCount: Int,
+    val skippedFiles: List<String>
+) {
+    val skippedCount: Int
+        get() = skippedFiles.size
+}
+
 sealed interface CurrentRecordLoadResult {
     data class Success(val record: HistoryRecord) : CurrentRecordLoadResult
     data class InsufficientSamples(val recordsFile: RecordsFile) : CurrentRecordLoadResult
@@ -557,13 +571,13 @@ object HistoryRepository {
      * @param context 应用上下文。
      * @param type 目标历史类型；决定导入落盘目录。
      * @param sourceUri 用户选择的 ZIP 文档 Uri。
-     * @return 返回成功导入的记录数；任一条目不符合一键导出格式时直接抛错，不执行部分导入。
+     * @return 返回导入结果；单条记录异常时跳过该条，其余合法记录继续导入。
      */
     fun importRecordsZip(
         context: Context,
         type: BatteryStatus,
         sourceUri: Uri
-    ): Int {
+    ): ImportRecordsZipResult {
         LoggerX.i(TAG, "[历史] 开始导入记录压缩包: type=${type.dataDirName} source=$sourceUri")
         val inputStream = context.contentResolver.openInputStream(sourceUri)
             ?: throw IOException("Failed to open source: $sourceUri")
@@ -578,31 +592,35 @@ object HistoryRepository {
         }
 
         try {
-            val stagedEntries = inputStream.use { rawInput ->
+            val importResult = inputStream.use { rawInput ->
                 ZipInputStream(rawInput.buffered()).use { zipInput ->
                     val seenNames = LinkedHashSet<String>()
-                    buildList {
-                        var entry = zipInput.nextEntry
-                        while (entry != null) {
-                            LoggerX.d(
-                                TAG,
-                                "[历史] 读取导入 ZIP 条目: type=${type.dataDirName} entry=${entry.name} size=${entry.size}"
-                            )
+                    val stagedEntries = mutableListOf<File>()
+                    val skippedFiles = mutableListOf<String>()
+                    var entry = zipInput.nextEntry
+                    while (entry != null) {
+                        val rawEntryName = entry.name
+                        val displayEntryName = rawEntryName.ifBlank { "<empty>" }
+                        LoggerX.d(
+                            TAG,
+                            "[历史] 读取导入 ZIP 条目: type=${type.dataDirName} entry=$displayEntryName size=${entry.size}"
+                        )
+                        try {
                             if (entry.isDirectory) {
-                                throw IOException("ZIP 包含目录条目，不是一键导出格式: ${entry.name}")
+                                throw IOException("ZIP 包含目录条目，不是一键导出格式: $displayEntryName")
                             }
 
-                            val entryName = entry.name.trim()
+                            val entryName = rawEntryName.trim()
                             if (entryName.isEmpty()) {
                                 throw IOException("ZIP 包含空文件名条目")
                             }
                             if (entryName.contains('/') || entryName.contains('\\')) {
-                                throw IOException("ZIP 条目路径非法，不是一键导出格式: ${entry.name}")
+                                throw IOException("ZIP 条目路径非法，不是一键导出格式: $displayEntryName")
                             }
                             if (!entryName.endsWith(RecordFileNames.PLAIN_SUFFIX) ||
                                 recordFileTimestampOrNull(File(entryName)) == null
                             ) {
-                                throw IOException("ZIP 条目文件名非法: ${entry.name}")
+                                throw IOException("ZIP 条目文件名非法: $displayEntryName")
                             }
                             if (!seenNames.add(entryName)) {
                                 throw IOException("ZIP 包含重复记录文件: $entryName")
@@ -617,14 +635,30 @@ object HistoryRepository {
                                 TAG,
                                 "[历史] 导入 ZIP 条目校验完成: type=${type.dataDirName} entry=$entryName size=${stagedFile.length()}"
                             )
-                            add(stagedFile)
+                            stagedEntries += stagedFile
+                        } catch (e: Exception) {
+                            LoggerX.w(
+                                TAG,
+                                "[历史] 跳过无效导入 ZIP 条目: type=${type.dataDirName} entry=$displayEntryName",
+                                tr = e
+                            )
+                            skippedFiles += displayEntryName
+                        } finally {
                             zipInput.closeEntry()
                             entry = zipInput.nextEntry
                         }
                     }
+                    ImportRecordsZipResult(
+                        importedCount = stagedEntries.size,
+                        skippedFiles = skippedFiles.toList()
+                    ) to stagedEntries
                 }
             }
+            val (result, stagedEntries) = importResult
             if (stagedEntries.isEmpty()) {
+                if (result.skippedCount > 0) {
+                    throw IOException("ZIP 中没有可导入的有效记录文件，已跳过 ${result.skippedCount} 条异常记录")
+                }
                 throw IOException("ZIP 中没有可导入的记录文件")
             }
             stagedEntries.forEach { stagedFile ->
@@ -637,8 +671,11 @@ object HistoryRepository {
                     "[历史] 导入记录文件写入完成: type=${type.dataDirName} file=${stagedFile.name} destination=${destinationFile.absolutePath}"
                 )
             }
-            LoggerX.i(TAG, "[历史] 导入记录压缩包成功: type=${type.dataDirName} count=${stagedEntries.size} source=$sourceUri")
-            return stagedEntries.size
+            LoggerX.i(
+                TAG,
+                "[历史] 导入记录压缩包完成: type=${type.dataDirName} imported=${result.importedCount} skipped=${result.skippedCount} source=$sourceUri"
+            )
+            return result
         } finally {
             stagingDir.deleteRecursively()
         }
