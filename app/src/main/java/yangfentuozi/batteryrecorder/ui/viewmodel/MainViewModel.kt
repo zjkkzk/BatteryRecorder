@@ -16,18 +16,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import yangfentuozi.batteryrecorder.R
 import yangfentuozi.batteryrecorder.appString
-import yangfentuozi.batteryrecorder.data.history.BatteryPredictor
-import yangfentuozi.batteryrecorder.data.history.CurrentRecordLoadResult
-import yangfentuozi.batteryrecorder.data.history.HistoryRecord
-import yangfentuozi.batteryrecorder.data.history.HistoryRepository
-import yangfentuozi.batteryrecorder.data.history.RecordCleanupRequest
-import yangfentuozi.batteryrecorder.data.history.RecordCleanupResult
 import yangfentuozi.batteryrecorder.data.history.HistorySummary
 import yangfentuozi.batteryrecorder.data.history.PredictionResult
+import yangfentuozi.batteryrecorder.data.history.RecordCleanupRequest
 import yangfentuozi.batteryrecorder.data.history.SceneStats
-import yangfentuozi.batteryrecorder.data.history.SceneStatsComputer
-import yangfentuozi.batteryrecorder.data.history.SyncUtil
-import yangfentuozi.batteryrecorder.data.log.LogRepository
 import yangfentuozi.batteryrecorder.ipc.Service
 import yangfentuozi.batteryrecorder.shared.config.SettingsConstants
 import yangfentuozi.batteryrecorder.shared.config.dataclass.StatisticsSettings
@@ -37,31 +29,17 @@ import yangfentuozi.batteryrecorder.shared.util.LoggerX
 import yangfentuozi.batteryrecorder.ui.model.CurrentRecordUiState
 import yangfentuozi.batteryrecorder.ui.model.HomePredictionDisplay
 import yangfentuozi.batteryrecorder.ui.model.LiveRecordSample
-import yangfentuozi.batteryrecorder.ui.model.PredictionConfidenceLevel
+import yangfentuozi.batteryrecorder.ui.stateholder.LiveRecordSessionStateHolder
+import yangfentuozi.batteryrecorder.usecase.home.CleanupRecordsUseCase
+import yangfentuozi.batteryrecorder.usecase.home.ExportLogsUseCase
+import yangfentuozi.batteryrecorder.usecase.home.LoadHomeStatsUseCase
 
 private const val TAG = "MainViewModel"
-
-private const val MAX_LIVE_POINTS = 20
-private const val PREDICTION_DISPLAY_SCORE_OFFSET = 5
-private const val PREDICTION_CONFIDENCE_LOW_MAX = 44
-private const val PREDICTION_CONFIDENCE_MEDIUM_MAX = 74
 
 private enum class StatisticsRefreshMode {
     ClearAndReload,
     TrackCurrentRecord
 }
-
-private sealed interface CurrentRecordDisplayLoadResult {
-    data class Success(val record: HistoryRecord) : CurrentRecordDisplayLoadResult
-    data class Pending(val recordsFile: RecordsFile) : CurrentRecordDisplayLoadResult
-    data class Missing(val recordsFile: RecordsFile) : CurrentRecordDisplayLoadResult
-    data class Failed(val recordsFile: RecordsFile, val error: Throwable) : CurrentRecordDisplayLoadResult
-}
-
-private data class LiveSegmentBuffer(
-    var recordsFileName: String? = null,
-    val points: ArrayList<Long> = ArrayList(MAX_LIVE_POINTS + 1)
-)
 
 class MainViewModel : ViewModel() {
     private val _serviceConnected = MutableStateFlow(false)
@@ -107,7 +85,7 @@ class MainViewModel : ViewModel() {
     private var statisticsJob: Job? = null
     private var statisticsGeneration: Long = 0L
     private var pendingCurrentRecordsFile: RecordsFile? = null
-    private val liveSegmentBuffer = LiveSegmentBuffer()
+    private val liveRecordSessionStateHolder = LiveRecordSessionStateHolder()
 
     private val serviceListener = object : Service.ServiceConnection {
         override fun onServiceConnected() {
@@ -174,27 +152,10 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 LoggerX.i(TAG, "exportLogs: 开始导出首页日志", notWrite = true)
-                val exportResult = withContext(Dispatchers.IO) {
-                    LogRepository.exportLogsZip(
-                        context = context,
-                        destinationUri = destinationUri
-                    )
-                }
-                LoggerX.d(
-                    TAG,
-                    "exportLogs: 导出结果 appCount=${exportResult.appFileCount} serverCount=${exportResult.serverFileCount} serverFailed=${exportResult.serverExportFailed}"
-                )
-                if (exportResult.serverExportFailed) {
-                    // “部分成功”是显式设计：Server 日志失败时保留 App 日志导出结果，并明确提示用户。
-                    LoggerX.w(
-                        TAG,
-                        "exportLogs: 首页日志导出完成, 但 Server 日志导出失败 reason=${exportResult.serverFailureMessage}"
-                    )
-                    _userMessage.value = appString(R.string.toast_export_partial_success)
-                } else {
-                    LoggerX.i(TAG, "exportLogs: 首页日志导出成功")
-                    _userMessage.value = appString(R.string.toast_export_success)
-                }
+                _userMessage.value = ExportLogsUseCase.execute(
+                    context = context,
+                    destinationUri = destinationUri
+                ).userMessage
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -232,20 +193,18 @@ class MainViewModel : ViewModel() {
                     TAG,
                     "[记录清理] 开始执行: keep=${request.keepCountPerType} duration=${request.maxDurationMinutes} capacity=${request.maxCapacityChangePercent} active=${activeRecordsFile?.name}"
                 )
-                val result = withContext(Dispatchers.IO) {
-                    HistoryRepository.cleanupRecords(
-                        context = appContext,
-                        request = request,
-                        activeRecordsFile = activeRecordsFile
-                    )
-                }
-                if (result.failedFiles.isNotEmpty()) {
+                val cleanupResult = CleanupRecordsUseCase.execute(
+                    context = appContext,
+                    request = request,
+                    activeRecordsFile = activeRecordsFile
+                )
+                if (cleanupResult.result.failedFiles.isNotEmpty()) {
                     LoggerX.w(
                         TAG,
-                        "[记录清理] 存在删除失败文件: ${result.failedFiles.joinToString()}"
+                        "[记录清理] 存在删除失败文件: ${cleanupResult.result.failedFiles.joinToString()}"
                     )
                 }
-                _userMessage.value = buildRecordCleanupMessage(result)
+                _userMessage.value = cleanupResult.userMessage
                 val refreshTarget = getServiceCurrentRecordsFile() ?: activeRecordsFile
                 refreshStatisticsTrackingCurrentRecord(
                     context = appContext,
@@ -280,53 +239,6 @@ class MainViewModel : ViewModel() {
             return
         }
         mainHandler.post(action)
-    }
-
-    /**
-     * 追加一条实时采样到当前分段缓存。
-     *
-     * @param power 原始功率采样值。
-     * @return 追加后的实时曲线点集合。
-     */
-    private fun appendLivePoint(power: Long): List<Long> {
-        liveSegmentBuffer.points.add(power)
-        while (liveSegmentBuffer.points.size > MAX_LIVE_POINTS) {
-            liveSegmentBuffer.points.removeAt(0)
-        }
-        return liveSegmentBuffer.points.toList()
-    }
-
-    /**
-     * 返回当前活动分段的实时点快照。
-     *
-     * @return 当前活动分段的实时点列表。
-     */
-    private fun snapshotLivePoints(): List<Long> {
-        return liveSegmentBuffer.points.toList()
-    }
-
-    /**
-     * 切换当前实时点缓存所属的记录文件。
-     *
-     * 分段一旦变化，必须立即清空实时点，禁止把旧分段曲线继续展示到新分段语义下。
-     *
-     * @param nextRecordsFileName 新的活动记录文件名，可为空。
-     * @return 无返回值。
-     */
-    private fun switchActiveLiveSegment(nextRecordsFileName: String?) {
-        if (liveSegmentBuffer.recordsFileName == nextRecordsFileName) {
-            return
-        }
-        LoggerX.d(TAG, 
-            "[首页] 切换实时分段缓存: ${liveSegmentBuffer.recordsFileName} -> $nextRecordsFileName"
-        )
-        liveSegmentBuffer.recordsFileName = nextRecordsFileName
-        liveSegmentBuffer.points.clear()
-        _currentRecordUiState.value =
-            _currentRecordUiState.value.copy(
-                recordsFileName = nextRecordsFileName,
-                livePoints = emptyList()
-            )
     }
 
     fun loadStatistics(
@@ -416,11 +328,11 @@ class MainViewModel : ViewModel() {
         recordsFile: RecordsFile
     ) {
         runOnMainThread {
-            if (liveSegmentBuffer.recordsFileName == recordsFile.name) {
+            if (liveRecordSessionStateHolder.activeRecordsFileName() == recordsFile.name) {
                 return@runOnMainThread
             }
             pendingCurrentRecordsFile = recordsFile
-            switchActiveLiveSegment(recordsFile.name)
+            liveRecordSessionStateHolder.switchActiveSegment(recordsFile.name)
             _currentRecordUiState.value =
                 _currentRecordUiState.value.copy(
                     recordsFileName = recordsFile.name,
@@ -455,19 +367,22 @@ class MainViewModel : ViewModel() {
     ) {
         runOnMainThread {
             val pendingFile = pendingCurrentRecordsFile
-            if (pendingFile != null && liveSegmentBuffer.recordsFileName != pendingFile.name) {
-                switchActiveLiveSegment(pendingFile.name)
+            if (
+                pendingFile != null &&
+                liveRecordSessionStateHolder.activeRecordsFileName() != pendingFile.name
+            ) {
+                liveRecordSessionStateHolder.switchActiveSegment(pendingFile.name)
             }
             val nextDisplayStatus = pendingFile?.type ?: sample.status
             val currentUiState = _currentRecordUiState.value
-            val nextLivePoints = if (liveSegmentBuffer.recordsFileName != null) {
-                appendLivePoint(sample.power)
+            val nextLivePoints = if (liveRecordSessionStateHolder.activeRecordsFileName() != null) {
+                liveRecordSessionStateHolder.appendLivePoint(sample.power)
             } else {
                 currentUiState.livePoints
             }
             _currentRecordUiState.value =
                 currentUiState.copy(
-                    recordsFileName = liveSegmentBuffer.recordsFileName,
+                    recordsFileName = liveRecordSessionStateHolder.activeRecordsFileName(),
                     displayStatus = nextDisplayStatus,
                     livePoints = nextLivePoints,
                     lastTemp = sample.temp
@@ -484,31 +399,6 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    private suspend fun loadCurrentRecordForDisplay(
-        context: Context,
-        dischargeDisplayPositive: Boolean,
-        recordsFile: RecordsFile
-    ): CurrentRecordDisplayLoadResult {
-        return withContext(Dispatchers.IO) {
-            when (val result = HistoryRepository.loadCurrentRecord(context, recordsFile)) {
-                is CurrentRecordLoadResult.Success -> {
-                    CurrentRecordDisplayLoadResult.Success(
-                        mapHistoryRecordForDisplay(result.record, dischargeDisplayPositive)
-                    )
-                }
-
-                is CurrentRecordLoadResult.InsufficientSamples ->
-                    CurrentRecordDisplayLoadResult.Pending(result.recordsFile)
-
-                is CurrentRecordLoadResult.Missing ->
-                    CurrentRecordDisplayLoadResult.Missing(result.recordsFile)
-
-                is CurrentRecordLoadResult.Failed ->
-                    CurrentRecordDisplayLoadResult.Failed(result.recordsFile, result.error)
-            }
-        }
-    }
-
     private suspend fun getServiceCurrentRecordsFile(): RecordsFile? {
         return withContext(Dispatchers.IO) {
             runCatching { Service.service?.currRecordsFile }
@@ -521,103 +411,10 @@ class MainViewModel : ViewModel() {
 
     private fun clearDisplayedHomeState() {
         pendingCurrentRecordsFile = null
-        liveSegmentBuffer.recordsFileName = null
-        liveSegmentBuffer.points.clear()
+        liveRecordSessionStateHolder.clear()
         _chargeSummary.value = null
         _dischargeSummary.value = null
         _currentRecordUiState.value = CurrentRecordUiState()
-    }
-
-    /**
-     * 构建当前记录加载失败提示文案。
-     *
-     * @param recordsFile 当前失败的分段文件。
-     * @param error 触发失败的异常。
-     * @return 展示给用户的失败提示。
-     */
-    private fun buildCurrentRecordLoadFailureMessage(
-        recordsFile: RecordsFile,
-        error: Throwable
-    ): String {
-        val detail = error.message?.takeIf { it.isNotBlank() } ?: error::class.java.simpleName
-        return appString(R.string.toast_current_record_load_failed, recordsFile.name, detail)
-    }
-
-    /**
-     * 生成记录清理结果提示文案。
-     *
-     * @param result 仓库层返回的清理结果。
-     * @return 返回用于首页 Toast 的简体中文提示。
-     */
-    private fun buildRecordCleanupMessage(result: RecordCleanupResult): String {
-        val failedCount = result.failedFiles.size
-        if (result.deletedCount == 0 && failedCount == 0) {
-            return appString(R.string.record_cleanup_toast_no_match)
-        }
-        if (result.deletedCount == 0) {
-            return appString(
-                R.string.record_cleanup_toast_all_failed,
-                failedCount
-            )
-        }
-        if (failedCount == 0) {
-            return appString(
-                R.string.record_cleanup_toast_success,
-                result.deletedCount,
-                result.deletedChargingCount,
-                result.deletedDischargingCount
-            )
-        }
-        return appString(
-            R.string.record_cleanup_toast_partial_failed,
-            result.deletedCount,
-            result.deletedChargingCount,
-            result.deletedDischargingCount,
-            failedCount
-        )
-    }
-
-    /**
-     * 把首页预测原始结果映射为卡片展示数据。
-     *
-     * @param prediction 首页预测算法返回的原始结果。
-     * @return 仅包含首页渲染所需字段的展示数据；当原始结果为空时返回空。
-     */
-    private fun buildPredictionDisplay(prediction: PredictionResult?): HomePredictionDisplay? {
-        if (prediction == null) {
-            return null
-        }
-        if (prediction.insufficientData) {
-            return HomePredictionDisplay(
-                insufficientReason = prediction.insufficientReason ?: appString(R.string.common_insufficient_data)
-            )
-        }
-
-        val adjustedScore =
-            (prediction.confidenceScore + PREDICTION_DISPLAY_SCORE_OFFSET).coerceIn(0, 100)
-        return HomePredictionDisplay(
-            confidenceLevel = mapPredictionConfidenceLevel(adjustedScore),
-            screenOffCurrentHours = prediction.screenOffCurrentHours,
-            screenOffFullHours = prediction.screenOffFullHours,
-            screenOnDailyCurrentHours = prediction.screenOnDailyCurrentHours,
-            screenOnDailyFullHours = prediction.screenOnDailyFullHours
-        )
-    }
-
-    /**
-     * 根据首页展示分映射置信度档位。
-     *
-     * @param adjustedScore 已完成偏移与截断的展示分。
-     * @return 首页卡片展示使用的置信度档位。
-     */
-    private fun mapPredictionConfidenceLevel(adjustedScore: Int): PredictionConfidenceLevel {
-        return when (adjustedScore) {
-            in 0..PREDICTION_CONFIDENCE_LOW_MAX -> PredictionConfidenceLevel.Low
-            in (PREDICTION_CONFIDENCE_LOW_MAX + 1)..PREDICTION_CONFIDENCE_MEDIUM_MAX ->
-                PredictionConfidenceLevel.Medium
-
-            else -> PredictionConfidenceLevel.High
-        }
     }
 
     private fun startLoadStatistics(
@@ -631,158 +428,53 @@ class MainViewModel : ViewModel() {
             clearDisplayedHomeState()
         }
 
-        val generation = (++statisticsGeneration)
-        LoggerX.i(TAG, 
+        val generation = ++statisticsGeneration
+        LoggerX.i(
+            TAG,
             "[首页] 开始加载统计: generation=$generation mode=$mode recentFileCount=${request.sceneStatsRecentFileCount} intervalMs=$recordIntervalMs"
         )
         _isLoadingStats.value = true
-        val job = viewModelScope.launch {
+        statisticsJob = viewModelScope.launch {
             try {
-                val dischargeDisplayPositive = getDischargeDisplayPositive(context)
-
-                withContext(Dispatchers.IO) {
-                    LoggerX.d(TAG, "[首页] 统计前触发同步")
-                    runCatching { SyncUtil.sync(context) }
-                }
-
-                val chargeSummary = withContext(Dispatchers.IO) {
-                    HistoryRepository.loadSummary(context, BatteryStatus.Charging)
-                }?.let {
-                    mapHistorySummaryForDisplay(
-                        it,
-                        dischargeDisplayPositive
-                    )
-                }
-                val dischargeSummary = withContext(Dispatchers.IO) {
-                    HistoryRepository.loadSummary(context, BatteryStatus.Discharging)
-                }?.let {
-                    mapHistorySummaryForDisplay(
-                        it,
-                        dischargeDisplayPositive
-                    )
-                }
-
                 val serviceCurrentRecordsFile = getServiceCurrentRecordsFile()
-                val targetRecordsFile = when {
-                    pendingCurrentRecordsFile != null &&
-                        serviceCurrentRecordsFile != null &&
-                        pendingCurrentRecordsFile != serviceCurrentRecordsFile -> {
-                        LoggerX.i(TAG, 
-                            "[首页] 目标分段已过期，改为服务端当前文件: ${serviceCurrentRecordsFile.name}"
-                        )
-                        serviceCurrentRecordsFile
-                    }
+                val loadResult = LoadHomeStatsUseCase.execute(
+                    context = context,
+                    request = request,
+                    recordIntervalMs = recordIntervalMs,
+                    pendingCurrentRecordsFile = pendingCurrentRecordsFile,
+                    expectedCurrentRecordsFile = expectedCurrentRecordsFile,
+                    serviceCurrentRecordsFile = serviceCurrentRecordsFile
+                )
+                if (generation != statisticsGeneration) return@launch
 
-                    pendingCurrentRecordsFile != null -> pendingCurrentRecordsFile
-                    expectedCurrentRecordsFile != null -> expectedCurrentRecordsFile
-                    else -> serviceCurrentRecordsFile
-                }
-
-                val currentRecordResult = targetRecordsFile?.let {
-                    loadCurrentRecordForDisplay(
-                        context = context,
-                        dischargeDisplayPositive = dischargeDisplayPositive,
-                        recordsFile = it
+                _chargeSummary.value = loadResult.chargeSummary
+                _dischargeSummary.value = loadResult.dischargeSummary
+                pendingCurrentRecordsFile = loadResult.nextPendingRecordsFile
+                liveRecordSessionStateHolder.switchActiveSegment(
+                    loadResult.nextActiveLiveRecordsFileName
+                )
+                val currentUiState = _currentRecordUiState.value
+                _currentRecordUiState.value =
+                    currentUiState.copy(
+                        recordsFileName = liveRecordSessionStateHolder.activeRecordsFileName(),
+                        displayStatus = loadResult.nextDisplayStatus ?: currentUiState.displayStatus,
+                        isSwitching = loadResult.nextPendingRecordsFile != null,
+                        record = loadResult.currentRecord,
+                        livePoints = liveRecordSessionStateHolder.snapshotLivePoints()
                     )
+
+                _sceneStats.value = loadResult.sceneStats
+                if (loadResult.shouldUpdatePrediction) {
+                    _prediction.value = loadResult.prediction
+                    _predictionDisplay.value = loadResult.predictionDisplay
                 }
-
-                val resolvedCurrentRecord = (currentRecordResult as? CurrentRecordDisplayLoadResult.Success)?.record
-                val currentRecordFailureMessage = (currentRecordResult as? CurrentRecordDisplayLoadResult.Failed)?.let {
-                    buildCurrentRecordLoadFailureMessage(
-                        recordsFile = it.recordsFile,
-                        error = it.error
-                    )
+                loadResult.currentRecordFailureMessage?.let { message ->
+                    _userMessage.value = message
                 }
-                val nextPendingRecordsFile = when (currentRecordResult) {
-                    is CurrentRecordDisplayLoadResult.Pending -> currentRecordResult.recordsFile
-                    is CurrentRecordDisplayLoadResult.Missing -> currentRecordResult.recordsFile
-                    else -> null
-                }
-
-                when (currentRecordResult) {
-                    is CurrentRecordDisplayLoadResult.Pending -> {
-                        LoggerX.d(TAG, 
-                            "[首页] 新分段样本不足，进入等待状态: ${currentRecordResult.recordsFile.name}"
-                        )
-                    }
-
-                    is CurrentRecordDisplayLoadResult.Missing -> {
-                        LoggerX.w(TAG, 
-                            "[首页] 当前分段尚未同步到本地，进入等待状态: ${currentRecordResult.recordsFile.name}"
-                        )
-                    }
-
-                    is CurrentRecordDisplayLoadResult.Failed -> {
-                        LoggerX.e(TAG, 
-                            "[首页] 当前分段加载失败，终止等待状态: ${currentRecordResult.recordsFile.name}",
-                            tr = currentRecordResult.error
-                        )
-                    }
-
-                    else -> {}
-                }
-
-                val currentSceneDischargeFileName = when {
-                    nextPendingRecordsFile?.type == BatteryStatus.Discharging -> nextPendingRecordsFile.name
-                    resolvedCurrentRecord?.type == BatteryStatus.Discharging -> resolvedCurrentRecord.name
-                    serviceCurrentRecordsFile?.type == BatteryStatus.Discharging -> serviceCurrentRecordsFile.name
-                    else -> null
-                }
-                val nextActiveLiveRecordsFileName = when {
-                    nextPendingRecordsFile != null -> nextPendingRecordsFile.name
-                    resolvedCurrentRecord != null -> resolvedCurrentRecord.name
-                    serviceCurrentRecordsFile != null -> serviceCurrentRecordsFile.name
-                    else -> null
-                }
-                val stats = withContext(Dispatchers.IO) {
-                    SceneStatsComputer.compute(
-                        context = context,
-                        request = request,
-                        recordIntervalMs = recordIntervalMs,
-                        currentDischargeFileName = currentSceneDischargeFileName
-                    )
-                }
-                val shouldRefreshPrediction = resolvedCurrentRecord?.type == BatteryStatus.Discharging
-
-                if (generation == statisticsGeneration) {
-                    _chargeSummary.value = chargeSummary
-                    _dischargeSummary.value = dischargeSummary
-                    pendingCurrentRecordsFile = nextPendingRecordsFile
-                    switchActiveLiveSegment(nextActiveLiveRecordsFileName)
-                    val currentUiState = _currentRecordUiState.value
-
-                    val nextDisplayStatus = when {
-                        nextPendingRecordsFile != null -> nextPendingRecordsFile.type
-                        resolvedCurrentRecord != null -> resolvedCurrentRecord.type
-                        serviceCurrentRecordsFile != null -> serviceCurrentRecordsFile.type
-                        else -> currentUiState.displayStatus
-                    }
-                    _currentRecordUiState.value =
-                        currentUiState.copy(
-                            recordsFileName = liveSegmentBuffer.recordsFileName,
-                            displayStatus = nextDisplayStatus,
-                            isSwitching = nextPendingRecordsFile != null,
-                            record = resolvedCurrentRecord,
-                            livePoints = snapshotLivePoints()
-                        )
-
-                    _sceneStats.value = stats.displayStats
-                    if (shouldRefreshPrediction) {
-                        _prediction.value =
-                            BatteryPredictor.predict(
-                                stats.homePredictionInputs,
-                                resolvedCurrentRecord.stats.endCapacity
-                            )
-                        _predictionDisplay.value = buildPredictionDisplay(_prediction.value)
-                    }
-                    currentRecordFailureMessage?.let { message ->
-                        _userMessage.value = message
-                    }
-
-                    LoggerX.i(TAG, 
-                        "[首页] 统计加载完成: generation=$generation currentRecord=${resolvedCurrentRecord?.name} pending=${nextPendingRecordsFile?.name}"
-                    )
-                }
+                LoggerX.i(
+                    TAG,
+                    "[首页] 统计加载完成: generation=$generation currentRecord=${loadResult.currentRecord?.name} pending=${loadResult.nextPendingRecordsFile?.name}"
+                )
             } finally {
                 if (generation == statisticsGeneration) {
                     LoggerX.d(TAG, "[首页] 统计任务结束: generation=$generation")
@@ -790,6 +482,5 @@ class MainViewModel : ViewModel() {
                 }
             }
         }
-        statisticsJob = job
     }
 }

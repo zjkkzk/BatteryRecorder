@@ -1,45 +1,21 @@
 package yangfentuozi.batteryrecorder.ui.viewmodel
 
 import android.content.Context
-import android.content.pm.PackageManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import yangfentuozi.batteryrecorder.R
 import yangfentuozi.batteryrecorder.appString
-import yangfentuozi.batteryrecorder.data.history.AppStatsComputer
-import yangfentuozi.batteryrecorder.data.history.BatteryPredictor
-import yangfentuozi.batteryrecorder.data.history.HistoryRepository
-import yangfentuozi.batteryrecorder.data.history.SyncUtil
 import yangfentuozi.batteryrecorder.shared.config.dataclass.StatisticsSettings
-import yangfentuozi.batteryrecorder.shared.data.BatteryStatus
 import yangfentuozi.batteryrecorder.shared.util.LoggerX
+import yangfentuozi.batteryrecorder.ui.model.PredictionDetailUiState
+import yangfentuozi.batteryrecorder.usecase.prediction.LoadPredictionDetailUseCase
 
 private const val TAG = "PredictionDetailViewModel"
-
-/**
- * 预测详情页单行展示数据。
- *
- * averagePowerRaw 保持原始口径，正负值映射交给 Screen 层根据设置处理。
- */
-data class PredictionDetailUiEntry(
-    val packageName: String,
-    val appLabel: String,
-    val averagePowerRaw: Double,
-    val currentHours: Double?
-)
-
-data class PredictionDetailUiState(
-    val isLoading: Boolean = false,
-    val entries: List<PredictionDetailUiEntry> = emptyList(),
-    val errorMessage: String? = null
-)
 
 class PredictionDetailViewModel : ViewModel() {
 
@@ -65,31 +41,7 @@ class PredictionDetailViewModel : ViewModel() {
         loadJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             val entries = try {
-                withContext(Dispatchers.IO) {
-                    SyncUtil.sync(context)
-
-                    val latestDischargeFile = HistoryRepository
-                        .listRecordFiles(context, BatteryStatus.Discharging)
-                        .firstOrNull()
-                    val latestDischargeRecord = latestDischargeFile?.let { file ->
-                        HistoryRepository.loadStats(context, file, needCaching = false)
-                    }
-                    val currentSoc = latestDischargeRecord?.stats?.endCapacity
-                    val packageManager = context.packageManager
-                    val appStats = AppStatsComputer.compute(
-                        context = context,
-                        request = request,
-                        recordIntervalMs = recordIntervalMs,
-                        currentDischargeFileName = latestDischargeRecord?.name
-                    )
-                    appStats.entries.mapNotNull { entry ->
-                        resolveInstalledAppEntry(
-                            packageManager = packageManager,
-                            entry = entry,
-                            currentSoc = currentSoc
-                        )
-                    }
-                }
+                LoadPredictionDetailUseCase.execute(context, request, recordIntervalMs)
             } catch (error: Throwable) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
                 LoggerX.e(TAG, "加载应用预测失败", tr = error)
@@ -109,25 +61,5 @@ class PredictionDetailViewModel : ViewModel() {
                 )
             }
         }
-    }
-
-    private fun resolveInstalledAppEntry(
-        packageManager: PackageManager,
-        entry: yangfentuozi.batteryrecorder.data.history.AppStatsEntry,
-        currentSoc: Int?
-    ): PredictionDetailUiEntry? {
-        // 仅展示当前仍已安装的应用，卸载包直接跳过。
-        val appInfo = runCatching {
-            packageManager.getApplicationInfo(entry.packageName, 0)
-        }.getOrNull() ?: return null
-        val label = runCatching {
-            appInfo.loadLabel(packageManager).toString()
-        }.getOrDefault(entry.packageName)
-        return PredictionDetailUiEntry(
-            packageName = entry.packageName,
-            appLabel = label,
-            averagePowerRaw = entry.rawAvgPowerRaw,
-            currentHours = currentSoc?.let { BatteryPredictor.predictAppCurrentHours(entry, it) }
-        )
     }
 }

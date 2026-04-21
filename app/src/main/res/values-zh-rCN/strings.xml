@@ -286,6 +286,7 @@
     <string name="toast_delete_success">删除成功</string>
     <string name="toast_delete_failed">删除失败</string>
     <string name="toast_import_success">导入成功，共 %1$d 条</string>
+    <string name="toast_import_partial_success">导入完成，成功 %1$d 条，跳过 %2$d 条异常记录</string>
     <string name="toast_import_failed">导入失败</string>
     <string name="toast_record_file_missing">记录文件不存在</string>
     <string name="toast_load_record_detail_failed">加载记录详情失败</string>

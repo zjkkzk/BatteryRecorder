@@ -63,7 +63,7 @@ import yangfentuozi.batteryrecorder.shared.data.RecordsFile
 import yangfentuozi.batteryrecorder.shared.util.LoggerX
 import yangfentuozi.batteryrecorder.ui.components.global.SwipeRevealRow
 import yangfentuozi.batteryrecorder.ui.theme.AppShape
-import yangfentuozi.batteryrecorder.ui.viewmodel.HistoryViewModel
+import yangfentuozi.batteryrecorder.ui.viewmodel.HistorySharedViewModel
 import yangfentuozi.batteryrecorder.ui.viewmodel.SettingsViewModel
 import yangfentuozi.batteryrecorder.utils.batteryRecorderScaffoldInsets
 import yangfentuozi.batteryrecorder.utils.formatDurationHours
@@ -90,7 +90,7 @@ private enum class HistoryListLayoutStyle {
 @Composable
 fun HistoryListScreen(
     batteryStatus: BatteryStatus,
-    viewModel: HistoryViewModel = viewModel(),
+    viewModel: HistorySharedViewModel = viewModel(),
     settingsViewModel: SettingsViewModel,
     onNavigateToRecordDetail: (BatteryStatus, String) -> Unit = { _, _ -> }
 ) {
@@ -103,6 +103,7 @@ fun HistoryListScreen(
     val calibrationValue by settingsViewModel.calibrationValue.collectAsState()
     // 一次性用户提示消息（如导出/删除结果提示）
     val userMessage by viewModel.userMessage.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
     // 导入/导出期间的共享加载态，避免重复触发文件操作。
     val isImportExporting by viewModel.isImportExporting.collectAsState()
     // 当前是否正在分页加载（避免重复并发请求）
@@ -279,7 +280,16 @@ fun HistoryListScreen(
         }
     ) { paddingValues ->
         Box(modifier = Modifier.fillMaxSize()) {
-            if (records.isEmpty()) {
+            if (isLoading && records.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    contentAlignment = Alignment.Center
+                ) {
+                    LoadingIndicator()
+                }
+            } else if (records.isEmpty()) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
