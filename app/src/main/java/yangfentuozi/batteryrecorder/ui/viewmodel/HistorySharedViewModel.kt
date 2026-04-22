@@ -16,6 +16,7 @@ import yangfentuozi.batteryrecorder.appString
 import yangfentuozi.batteryrecorder.data.history.HistoryRecord
 import yangfentuozi.batteryrecorder.data.history.HistoryRepository
 import yangfentuozi.batteryrecorder.data.history.RecordDetailPowerStats
+import yangfentuozi.batteryrecorder.data.history.RecordCleanupRequest
 import yangfentuozi.batteryrecorder.shared.config.SharedSettings
 import yangfentuozi.batteryrecorder.shared.config.SettingsConstants
 import yangfentuozi.batteryrecorder.shared.data.BatteryStatus
@@ -27,6 +28,7 @@ import yangfentuozi.batteryrecorder.ui.model.RecordAppDetailUiEntry
 import yangfentuozi.batteryrecorder.ui.model.RecordDetailChartUiState
 import yangfentuozi.batteryrecorder.ui.model.RecordDetailSummaryUiState
 import yangfentuozi.batteryrecorder.usecase.history.BuildRecordDetailChartUiStateUseCase
+import yangfentuozi.batteryrecorder.usecase.history.CleanupHistoryRecordsUseCase
 import yangfentuozi.batteryrecorder.usecase.history.HistoryListSession
 import yangfentuozi.batteryrecorder.usecase.history.LoadHistoryListUseCase
 import yangfentuozi.batteryrecorder.usecase.history.LoadRecordDetailUseCase
@@ -448,7 +450,11 @@ class HistorySharedViewModel : ViewModel() {
                     context = context,
                     type = type,
                     previousSession = listSession,
-                    chargeCapacityChangeFilter = _chargeCapacityChangeFilter.value
+                    chargeCapacityChangeFilter = if (type == BatteryStatus.Charging) {
+                        _chargeCapacityChangeFilter.value
+                    } else {
+                        null
+                    }
                 )
                 if (token != listLoadToken) return@launch
                 applyHistoryListResult(result)
@@ -479,6 +485,41 @@ class HistorySharedViewModel : ViewModel() {
                     _isLoading.value = false
                 }
                 _isImportExporting.value = false
+            }
+        }
+    }
+
+    fun cleanupRecords(
+        context: Context,
+        type: BatteryStatus,
+        request: RecordCleanupRequest
+    ) {
+        if (_isImportExporting.value) {
+            LoggerX.w(
+                TAG,
+                "[记录清理] 历史页清理被跳过: type=${type.dataDirName} isImportExporting=${_isImportExporting.value}"
+            )
+            return
+        }
+        viewModelScope.launch {
+            try {
+                _isLoading.value = true
+                val cleanupResult = CleanupHistoryRecordsUseCase.execute(
+                    context = context,
+                    type = type,
+                    request = request,
+                    previousSession = listSession,
+                    chargeCapacityChangeFilter = _chargeCapacityChangeFilter.value
+                )
+                applyHistoryListResult(cleanupResult.historyListUiResult)
+                _userMessage.value = cleanupResult.userMessage
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                LoggerX.e(TAG, "[记录清理] 历史页清理失败: type=${type.dataDirName}", tr = e)
+                _userMessage.value = appString(R.string.record_cleanup_toast_failed)
+            } finally {
+                _isLoading.value = false
             }
         }
     }

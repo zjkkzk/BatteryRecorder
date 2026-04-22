@@ -18,13 +18,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Outbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -45,12 +49,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
@@ -58,10 +63,13 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import yangfentuozi.batteryrecorder.R
+import yangfentuozi.batteryrecorder.data.history.RecordCleanupRequest
 import yangfentuozi.batteryrecorder.shared.data.BatteryStatus
 import yangfentuozi.batteryrecorder.shared.data.RecordsFile
 import yangfentuozi.batteryrecorder.shared.util.LoggerX
 import yangfentuozi.batteryrecorder.ui.components.global.SwipeRevealRow
+import yangfentuozi.batteryrecorder.ui.dialog.home.RecordCleanupConfirmDialog
+import yangfentuozi.batteryrecorder.ui.dialog.home.RecordCleanupDialog
 import yangfentuozi.batteryrecorder.ui.theme.AppShape
 import yangfentuozi.batteryrecorder.ui.viewmodel.HistorySharedViewModel
 import yangfentuozi.batteryrecorder.ui.viewmodel.SettingsViewModel
@@ -119,6 +127,10 @@ fun HistoryListScreen(
         context.getSharedPreferences(HISTORY_LIST_PREFS_NAME, Context.MODE_PRIVATE)
     }
     var openRecordName by remember { mutableStateOf<String?>(null) }
+    var showMenu by remember { mutableStateOf(false) }
+    var showRecordCleanupDialog by remember { mutableStateOf(false) }
+    var cleanupDialogInitialRequest by remember { mutableStateOf<RecordCleanupRequest?>(null) }
+    var pendingRecordCleanupRequest by remember { mutableStateOf<RecordCleanupRequest?>(null) }
     // 历史列表样式只影响当前页面展示，因此使用页面本地偏好持久化，不进入全局业务设置。
     var layoutStyle by remember(historyListPrefs) {
         mutableStateOf(loadHistoryListLayoutStyle(historyListPrefs.getString(KEY_HISTORY_LIST_LAYOUT_STYLE, null)))
@@ -196,6 +208,11 @@ fun HistoryListScreen(
     } else {
         stringResource(R.string.history_discharging_title)
     }
+    val cleanupTargetLabel = if (batteryStatus == BatteryStatus.Charging) {
+        stringResource(R.string.history_record_type_charging)
+    } else {
+        stringResource(R.string.history_record_type_discharging)
+    }
     val emptyText = if (
         batteryStatus == BatteryStatus.Charging &&
         chargeCapacityChangeFilter != null
@@ -230,34 +247,56 @@ fun HistoryListScreen(
                     IconButton(
                         enabled = !isImportExporting,
                         onClick = {
-                            LoggerX.i(
-                                "HistoryListScreen",
-                                "[导入] 点击批量导入: type=${batteryStatus.dataDirName}"
-                            )
-                            importAllLauncher.launch(
-                                arrayOf("application/zip", "application/x-zip-compressed")
-                            )
+                            cleanupDialogInitialRequest = null
+                            showRecordCleanupDialog = true
                         }
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Download,
-                            contentDescription = stringResource(R.string.history_import)
+                            imageVector = Icons.Filled.DeleteSweep,
+                            contentDescription = stringResource(R.string.record_cleanup_title)
                         )
                     }
                     IconButton(
-                        enabled = !isImportExporting,
-                        onClick = {
-                            val fileName = buildHistoryZipFileName(batteryStatus)
-                            LoggerX.i(
-                                "HistoryListScreen",
-                                "[导出] 点击批量导出: type=${batteryStatus.dataDirName} fileName=$fileName"
-                            )
-                            exportAllLauncher.launch(fileName)
-                        }
+                        onClick = { showMenu = !showMenu }
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Outbox,
-                            contentDescription = stringResource(R.string.history_export_all)
+                            imageVector = Icons.Filled.MoreVert,
+                            contentDescription = null
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false },
+                        shape = AppShape.large,
+                        offset = DpOffset(x = 0.dp, y = (-48).dp),
+                        modifier = Modifier.widthIn(min = 160.dp)
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.history_import)) },
+                            onClick = {
+                                showMenu = false
+                                LoggerX.i(
+                                    "HistoryListScreen",
+                                    "[导入] 点击批量导入: type=${batteryStatus.dataDirName}"
+                                )
+                                importAllLauncher.launch(
+                                    arrayOf("application/zip", "application/x-zip-compressed")
+                                )
+                            },
+                            enabled = !isImportExporting
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.history_export_all)) },
+                            onClick = {
+                                showMenu = false
+                                val fileName = buildHistoryZipFileName(batteryStatus)
+                                LoggerX.i(
+                                    "HistoryListScreen",
+                                    "[导出] 点击批量导出: type=${batteryStatus.dataDirName} fileName=$fileName"
+                                )
+                                exportAllLauncher.launch(fileName)
+                            },
+                            enabled = !isImportExporting
                         )
                     }
                 }
@@ -495,6 +534,44 @@ fun HistoryListScreen(
                 }
             }
         }
+    }
+
+    if (showRecordCleanupDialog) {
+        RecordCleanupDialog(
+            targetTypeLabel = cleanupTargetLabel,
+            initialRequest = cleanupDialogInitialRequest,
+            onDismiss = {
+                showRecordCleanupDialog = false
+                cleanupDialogInitialRequest = null
+            },
+            onConfirm = { request ->
+                showRecordCleanupDialog = false
+                cleanupDialogInitialRequest = request
+                pendingRecordCleanupRequest = request
+            }
+        )
+    }
+
+    pendingRecordCleanupRequest?.let { request ->
+        RecordCleanupConfirmDialog(
+            targetTypeLabel = cleanupTargetLabel,
+            request = request,
+            onDismiss = {
+                pendingRecordCleanupRequest = null
+                cleanupDialogInitialRequest = request
+                showRecordCleanupDialog = true
+            },
+            onConfirm = {
+                pendingRecordCleanupRequest = null
+                cleanupDialogInitialRequest = null
+                showMenu = false
+                viewModel.cleanupRecords(
+                    context = context,
+                    type = batteryStatus,
+                    request = request
+                )
+            }
+        )
     }
 }
 

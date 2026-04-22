@@ -388,15 +388,17 @@ object HistoryRepository {
     }
 
     /**
-     * 按主页清理规则扫描并删除历史记录。
+     * 按指定历史类型扫描并删除记录。
      *
      * @param context 应用上下文。
+     * @param type 当前清理的历史类型，仅允许充电或放电。
      * @param request 用户确认后的清理规则。
      * @param activeRecordsFile 当前正在写入的记录文件；该文件始终受保护，不参与删除。
      * @return 返回本次清理的删除结果与失败文件列表。
      */
     fun cleanupRecords(
         context: Context,
+        type: BatteryStatus,
         request: RecordCleanupRequest,
         activeRecordsFile: RecordsFile? = null
     ): RecordCleanupResult {
@@ -411,57 +413,53 @@ object HistoryRepository {
         val cleanupTargets = LinkedHashMap<String, RecordCleanupTarget>()
 
         if (request.keepCountPerType != null) {
-            CLEANUP_TARGET_TYPES.forEach { type ->
-                val overflowFiles = listSortedRecordFiles(dataDir(context, type))
-                    .drop(request.keepCountPerType)
-                overflowFiles.forEach { file ->
-                    if (file.absolutePath == protectedPath) return@forEach
-                    val key = "${type.dataDirName}/${file.name}"
-                    if (cleanupTargets[key] == null) {
-                        cleanupTargets[key] = RecordCleanupTarget(type = type, file = file)
-                    }
+            val overflowFiles = listSortedRecordFiles(dataDir(context, type))
+                .drop(request.keepCountPerType)
+            overflowFiles.forEach { file ->
+                if (file.absolutePath == protectedPath) return@forEach
+                val key = "${type.dataDirName}/${file.name}"
+                if (cleanupTargets[key] == null) {
+                    cleanupTargets[key] = RecordCleanupTarget(type = type, file = file)
                 }
             }
         }
 
         if (request.hasConditionalRules) {
-            CLEANUP_TARGET_TYPES.forEach { type ->
-                listAllRecordFiles(context, type).forEach { file ->
-                    if (file.absolutePath == protectedPath) return@forEach
-                    when (val inspection = inspectRecordForCleanup(context, file)) {
-                        is RecordCleanupInspection.Valid -> {
-                            val stats = inspection.stats
-                            val durationMs = (stats.endTime - stats.startTime).coerceAtLeast(0L)
-                            val capacityChange = computeCapacityChange(type, stats)
-                            val durationMatched =
-                                request.maxDurationMinutes == null ||
-                                    durationMs < request.maxDurationMinutes * 60_000L
-                            val capacityMatched =
-                                request.maxCapacityChangePercent == null ||
-                                    capacityChange < request.maxCapacityChangePercent
-                            if (!durationMatched || !capacityMatched) {
-                                return@forEach
-                            }
-                            val key = "${type.dataDirName}/${file.name}"
-                            if (cleanupTargets[key] == null) {
-                                cleanupTargets[key] = RecordCleanupTarget(type = type, file = file)
-                            }
+            listAllRecordFiles(context, type).forEach { file ->
+                if (file.absolutePath == protectedPath) return@forEach
+                when (val inspection = inspectRecordForCleanup(context, file)) {
+                    is RecordCleanupInspection.Valid -> {
+                        val stats = inspection.stats
+                        val durationMs = (stats.endTime - stats.startTime).coerceAtLeast(0L)
+                        val capacityChange = computeCapacityChange(type, stats)
+                        val durationMatched =
+                            request.maxDurationMinutes == null ||
+                                durationMs < request.maxDurationMinutes * 60_000L
+                        val capacityMatched =
+                            request.maxCapacityChangePercent == null ||
+                                capacityChange < request.maxCapacityChangePercent
+                        if (!durationMatched || !capacityMatched) {
+                            return@forEach
                         }
+                        val key = "${type.dataDirName}/${file.name}"
+                        if (cleanupTargets[key] == null) {
+                            cleanupTargets[key] = RecordCleanupTarget(type = type, file = file)
+                        }
+                    }
 
-                        RecordCleanupInspection.InvalidFileName -> {
-                            LoggerX.w(
-                                TAG,
-                                "[记录清理] 文件名非法，跳过条件清理: ${file.absolutePath}"
-                            )
-                        }
+                    RecordCleanupInspection.InvalidFileName -> {
+                        LoggerX.w(
+                            TAG,
+                            "[记录清理] 文件名非法，跳过条件清理: ${file.absolutePath}"
+                        )
+                    }
 
-                        is RecordCleanupInspection.InvalidStats -> {
-                            LoggerX.w(
-                                TAG,
-                                "[记录清理] 记录解析失败，跳过条件清理: file=${file.absolutePath}",
-                                tr = inspection.error
-                            )
-                        }
+                    is RecordCleanupInspection.InvalidStats -> {
+                        LoggerX.w(
+                            TAG,
+                            "[记录清理] 记录解析失败，跳过条件清理: file=${file.absolutePath}",
+                            tr = inspection.error
+                        )
                     }
                 }
             }

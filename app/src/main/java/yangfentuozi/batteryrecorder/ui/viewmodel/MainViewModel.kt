@@ -18,11 +18,9 @@ import yangfentuozi.batteryrecorder.R
 import yangfentuozi.batteryrecorder.appString
 import yangfentuozi.batteryrecorder.data.history.HistorySummary
 import yangfentuozi.batteryrecorder.data.history.PredictionResult
-import yangfentuozi.batteryrecorder.data.history.RecordCleanupRequest
 import yangfentuozi.batteryrecorder.data.history.SceneStats
 import yangfentuozi.batteryrecorder.ipc.Service
 import yangfentuozi.batteryrecorder.shared.config.SettingsConstants
-import yangfentuozi.batteryrecorder.shared.config.dataclass.StatisticsSettings
 import yangfentuozi.batteryrecorder.shared.data.BatteryStatus
 import yangfentuozi.batteryrecorder.shared.data.RecordsFile
 import yangfentuozi.batteryrecorder.shared.util.LoggerX
@@ -30,9 +28,9 @@ import yangfentuozi.batteryrecorder.ui.model.CurrentRecordUiState
 import yangfentuozi.batteryrecorder.ui.model.HomePredictionDisplay
 import yangfentuozi.batteryrecorder.ui.model.LiveRecordSample
 import yangfentuozi.batteryrecorder.ui.stateholder.LiveRecordSessionStateHolder
-import yangfentuozi.batteryrecorder.usecase.home.CleanupRecordsUseCase
 import yangfentuozi.batteryrecorder.usecase.home.ExportLogsUseCase
 import yangfentuozi.batteryrecorder.usecase.home.LoadHomeStatsUseCase
+import yangfentuozi.batteryrecorder.shared.config.dataclass.StatisticsSettings
 
 private const val TAG = "MainViewModel"
 
@@ -53,9 +51,6 @@ class MainViewModel : ViewModel() {
 
     private val _userMessage = MutableStateFlow<String?>(null)
     val userMessage: StateFlow<String?> = _userMessage.asStateFlow()
-
-    private val _isCleaningRecords = MutableStateFlow(false)
-    val isCleaningRecords: StateFlow<Boolean> = _isCleaningRecords.asStateFlow()
 
     private val _chargeSummary = MutableStateFlow<HistorySummary?>(null)
     val chargeSummary: StateFlow<HistorySummary?> = _chargeSummary.asStateFlow()
@@ -161,64 +156,6 @@ class MainViewModel : ViewModel() {
             } catch (e: Exception) {
                 LoggerX.e(TAG, "exportLogs: 日志导出失败", tr = e)
                 _userMessage.value = appString(R.string.toast_export_failed)
-            }
-        }
-    }
-
-    /**
-     * 按主页确认后的规则执行记录清理，并在完成后刷新首页统计。
-     *
-     * @param context 应用上下文。
-     * @param request 用户确认后的清理规则。
-     * @param statisticsRequest 当前首页统计请求。
-     * @param recordIntervalMs 当前采样间隔；用于清理后刷新首页统计。
-     * @return 无返回值。
-     */
-    fun cleanupRecords(
-        context: Context,
-        request: RecordCleanupRequest,
-        statisticsRequest: StatisticsSettings,
-        recordIntervalMs: Long
-    ) {
-        if (_isCleaningRecords.value) {
-            LoggerX.v(TAG, "[记录清理] 清理任务已在进行，跳过重复请求")
-            return
-        }
-        viewModelScope.launch {
-            _isCleaningRecords.value = true
-            try {
-                val appContext = context.applicationContext
-                val activeRecordsFile = getServiceCurrentRecordsFile()
-                LoggerX.i(
-                    TAG,
-                    "[记录清理] 开始执行: keep=${request.keepCountPerType} duration=${request.maxDurationMinutes} capacity=${request.maxCapacityChangePercent} active=${activeRecordsFile?.name}"
-                )
-                val cleanupResult = CleanupRecordsUseCase.execute(
-                    context = appContext,
-                    request = request,
-                    activeRecordsFile = activeRecordsFile
-                )
-                if (cleanupResult.result.failedFiles.isNotEmpty()) {
-                    LoggerX.w(
-                        TAG,
-                        "[记录清理] 存在删除失败文件: ${cleanupResult.result.failedFiles.joinToString()}"
-                    )
-                }
-                _userMessage.value = cleanupResult.userMessage
-                val refreshTarget = getServiceCurrentRecordsFile() ?: activeRecordsFile
-                refreshStatisticsTrackingCurrentRecord(
-                    context = appContext,
-                    request = statisticsRequest,
-                    recordIntervalMs = recordIntervalMs,
-                    expectedCurrentRecordsFile = refreshTarget
-                )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                LoggerX.e(TAG, "[记录清理] 执行失败", tr = e)
-                _userMessage.value = appString(R.string.record_cleanup_toast_failed)
-            } finally {
-                _isCleaningRecords.value = false
             }
         }
     }

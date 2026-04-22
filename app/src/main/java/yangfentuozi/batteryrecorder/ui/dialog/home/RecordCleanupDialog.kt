@@ -28,8 +28,9 @@ import yangfentuozi.batteryrecorder.data.history.RecordCleanupRequest
 import yangfentuozi.batteryrecorder.ui.theme.AppShape
 
 /**
- * 渲染主页“记录清理”配置弹窗。
+ * 渲染历史页“记录清理”配置弹窗。
  *
+ * @param targetTypeLabel 当前历史页对应的记录类型文案，如“充电记录”。
  * @param initialRequest 已填写过的清理规则；用于“返回修改”时回填用户输入。
  * @param onDismiss 用户取消或关闭弹窗时回调。
  * @param onConfirm 用户确认规则后回调；仅在输入合法时触发。
@@ -37,6 +38,7 @@ import yangfentuozi.batteryrecorder.ui.theme.AppShape
  */
 @Composable
 fun RecordCleanupDialog(
+    targetTypeLabel: String,
     initialRequest: RecordCleanupRequest? = null,
     onDismiss: () -> Unit,
     onConfirm: (RecordCleanupRequest) -> Unit
@@ -51,13 +53,13 @@ fun RecordCleanupDialog(
         mutableStateOf(initialRequest?.maxDurationMinutes != null)
     }
     var durationText by remember(initialRequest) {
-        mutableStateOf(initialRequest?.maxDurationMinutes?.toString().orEmpty())
+        mutableStateOf(initialRequest?.maxDurationMinutes?.toString() ?: "5")
     }
     var capacityEnabled by remember(initialRequest) {
         mutableStateOf(initialRequest?.maxCapacityChangePercent != null)
     }
     var capacityText by remember(initialRequest) {
-        mutableStateOf(initialRequest?.maxCapacityChangePercent?.toString().orEmpty())
+        mutableStateOf(initialRequest?.maxCapacityChangePercent?.toString() ?: "5")
     }
 
     val keepCount = keepCountText.toIntOrNull()
@@ -79,7 +81,7 @@ fun RecordCleanupDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.record_cleanup_intro),
+                    text = stringResource(R.string.record_cleanup_intro_current_type, targetTypeLabel),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -91,7 +93,10 @@ fun RecordCleanupDialog(
                     onValueChange = { keepCountText = it },
                     label = stringResource(R.string.record_cleanup_keep_count_label),
                     placeholder = stringResource(R.string.record_cleanup_keep_count_placeholder),
-                    supportingText = stringResource(R.string.record_cleanup_keep_count_hint),
+                    supportingText = stringResource(
+                        R.string.record_cleanup_keep_count_hint_current_type,
+                        targetTypeLabel
+                    ),
                     errorText = stringResource(R.string.record_cleanup_keep_count_error),
                     isError = keepError
                 )
@@ -115,7 +120,10 @@ fun RecordCleanupDialog(
                     onValueChange = { capacityText = it },
                     label = stringResource(R.string.record_cleanup_capacity_label),
                     placeholder = stringResource(R.string.record_cleanup_capacity_placeholder),
-                    supportingText = stringResource(R.string.record_cleanup_capacity_hint),
+                    supportingText = stringResource(
+                        R.string.record_cleanup_capacity_hint_current_type,
+                        targetTypeLabel
+                    ),
                     errorText = stringResource(R.string.record_cleanup_capacity_error),
                     isError = capacityError
                 )
@@ -162,25 +170,26 @@ fun RecordCleanupDialog(
 /**
  * 渲染记录清理执行前的二次确认弹窗。
  *
+ * @param targetTypeLabel 当前历史页对应的记录类型文案，如“充电记录”。
  * @param request 用户已填写并校验通过的清理规则。
- * @param isCleaning 当前是否正在执行清理；用于禁用重复点击。
  * @param onDismiss 用户取消执行时回调。
  * @param onConfirm 用户确认执行时回调。
  * @return 无，直接渲染弹窗。
  */
 @Composable
 fun RecordCleanupConfirmDialog(
+    targetTypeLabel: String,
     request: RecordCleanupRequest,
-    isCleaning: Boolean,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
     val summaryText = buildString {
-        appendLine(stringResource(R.string.record_cleanup_confirm_intro))
+        appendLine(stringResource(R.string.record_cleanup_confirm_intro_current_type, targetTypeLabel))
         request.keepCountPerType?.let { keepCount ->
             appendLine(
                 stringResource(
-                    R.string.record_cleanup_confirm_keep_count,
+                    R.string.record_cleanup_confirm_keep_count_current_type,
+                    targetTypeLabel,
                     keepCount
                 )
             )
@@ -205,26 +214,16 @@ fun RecordCleanupConfirmDialog(
     }
 
     AlertDialog(
-        onDismissRequest = {
-            if (!isCleaning) {
-                onDismiss()
-            }
-        },
+        onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.record_cleanup_confirm_title)) },
         text = { Text(summaryText) },
         confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                enabled = !isCleaning
-            ) {
+            TextButton(onClick = onConfirm) {
                 Text(stringResource(R.string.record_cleanup_execute_action))
             }
         },
         dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                enabled = !isCleaning
-            ) {
+            TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.record_cleanup_back_action))
             }
         },
