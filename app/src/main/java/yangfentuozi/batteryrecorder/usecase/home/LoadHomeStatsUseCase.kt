@@ -17,11 +17,13 @@ import yangfentuozi.batteryrecorder.shared.config.SharedSettings
 import yangfentuozi.batteryrecorder.shared.config.dataclass.StatisticsSettings
 import yangfentuozi.batteryrecorder.shared.data.BatteryStatus
 import yangfentuozi.batteryrecorder.shared.data.RecordsFile
+import yangfentuozi.batteryrecorder.shared.util.LoggerX
 import yangfentuozi.batteryrecorder.ui.mapper.PowerDisplayMapper
 import yangfentuozi.batteryrecorder.ui.model.HomePredictionDisplay
 import yangfentuozi.batteryrecorder.ui.model.PredictionConfidenceLevel
 import kotlin.math.abs
 
+private const val TAG = "LoadHomeStatsUseCase"
 private const val PREDICTION_DISPLAY_SCORE_OFFSET = 5
 private const val PREDICTION_CONFIDENCE_LOW_MAX = 44
 private const val PREDICTION_CONFIDENCE_MEDIUM_MAX = 74
@@ -113,6 +115,18 @@ internal object LoadHomeStatsUseCase {
             expectedCurrentRecordsFile != null -> expectedCurrentRecordsFile
             else -> serviceCurrentRecordsFile
         }
+        LoggerX.i(
+            TAG,
+            "[首页] 当前记录目标: pending=%s/%s expected=%s/%s service=%s/%s target=%s/%s",
+            pendingCurrentRecordsFile?.type,
+            pendingCurrentRecordsFile?.name,
+            expectedCurrentRecordsFile?.type,
+            expectedCurrentRecordsFile?.name,
+            serviceCurrentRecordsFile?.type,
+            serviceCurrentRecordsFile?.name,
+            targetRecordsFile?.type,
+            targetRecordsFile?.name
+        )
 
         val currentRecordResult = targetRecordsFile?.let {
             loadCurrentRecordForDisplay(
