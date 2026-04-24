@@ -1,6 +1,7 @@
 package yangfentuozi.batteryrecorder.server.recorder
 
 import android.app.ActivityManager.RunningTaskInfo
+import android.app.ActivityTaskManager.RootTaskInfo
 import android.app.IActivityTaskManager
 import android.app.ITaskStackListener
 import android.app.TaskInfo
@@ -48,7 +49,7 @@ class Monitor(
     private val taskStackListener: ITaskStackListener = object : TaskStackListener() {
         @Keep
         override fun onTaskMovedToFront(taskInfo: RunningTaskInfo) {
-            onFocusedAppChanged(taskInfo, "task-moved")
+            onFocusedAppChanged(taskInfo, getFocusedRootTaskInfo(), "task-moved")
         }
     }
 
@@ -266,7 +267,8 @@ class Monitor(
         }
 
         try {
-            onFocusedAppChanged(iActivityTaskManager.getFocusedRootTaskInfo(), "init")
+            val focusedRootTaskInfo = iActivityTaskManager.getFocusedRootTaskInfo()
+            onFocusedAppChanged(focusedRootTaskInfo, focusedRootTaskInfo, "init")
         } catch (e: RemoteException) {
             throw RuntimeException("start: 获取当前焦点任务信息失败", e)
         }
@@ -363,11 +365,19 @@ class Monitor(
      * @param source 本次前台变更的事件来源，便于区分初始化与任务切换场景。
      * @return 无；当顶部 Activity 为空或命中小窗规则时仅输出日志，不更新当前前台应用缓存。
      */
-    private fun onFocusedAppChanged(taskInfo: TaskInfo, source: String) {
+    private fun onFocusedAppChanged(
+        taskInfo: TaskInfo,
+        focusedRootTaskInfo: RootTaskInfo?,
+        source: String
+    ) {
         val oldForegroundApp = currForegroundApp
         val componentName = taskInfo.topActivity
-        val bounds = TaskInfoCompat.getBoundsOrNull(taskInfo)
-        val maxBounds = TaskInfoCompat.getMaxBoundsOrNull(taskInfo)
+        val bounds = try {
+            TaskInfoCompat.getBoundsOrNull(iActivityTaskManager, taskInfo, focusedRootTaskInfo)
+        } catch (e: RemoteException) {
+            throw RuntimeException("前台应用检测: 获取任务窗口边界失败", e)
+        }
+        val maxBounds = TaskInfoCompat.getMaxBoundsOrNull(focusedRootTaskInfo)
         val boundsText = formatRect(bounds)
         val maxBoundsText = formatRect(maxBounds)
         if (componentName == null) {
@@ -445,6 +455,12 @@ class Monitor(
     private fun formatRect(rect: Rect?): String {
         if (rect == null) return "unavailable"
         return "[${rect.left},${rect.top},${rect.right},${rect.bottom}]"
+    }
+
+    private fun getFocusedRootTaskInfo(): RootTaskInfo = try {
+        iActivityTaskManager.getFocusedRootTaskInfo()
+    } catch (e: RemoteException) {
+        throw RuntimeException("前台应用检测: 获取当前焦点 RootTask 信息失败", e)
     }
 
     // 耗时操作
