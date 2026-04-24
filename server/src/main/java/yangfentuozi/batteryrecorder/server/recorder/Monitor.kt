@@ -49,7 +49,7 @@ class Monitor(
     private val taskStackListener: ITaskStackListener = object : TaskStackListener() {
         @Keep
         override fun onTaskMovedToFront(taskInfo: RunningTaskInfo) {
-            onFocusedAppChanged(taskInfo, getFocusedRootTaskInfo(), "task-moved")
+            onFocusedAppChanged(taskInfo, getFocusedRootTaskInfoOrNull(), "task-moved")
         }
     }
 
@@ -362,6 +362,7 @@ class Monitor(
      * 记录当前聚焦任务对应的前台应用诊断日志，并在满足记录条件时更新缓存包名。
      *
      * @param taskInfo 当前收到的任务栈信息，用于提取任务 ID 与顶部 Activity。
+     * @param focusedRootTaskInfo 当前聚焦 RootTask 信息，用于读取最大窗口边界。
      * @param source 本次前台变更的事件来源，便于区分初始化与任务切换场景。
      * @return 无；当顶部 Activity 为空或命中小窗规则时仅输出日志，不更新当前前台应用缓存。
      */
@@ -375,7 +376,8 @@ class Monitor(
         val bounds = try {
             TaskInfoCompat.getBoundsOrNull(iActivityTaskManager, taskInfo, focusedRootTaskInfo)
         } catch (e: RemoteException) {
-            throw RuntimeException("前台应用检测: 获取任务窗口边界失败", e)
+            LoggerX.e(tag, "前台应用检测: 获取任务窗口边界失败, 跳过本次前台应用更新", tr = e)
+            return
         }
         val maxBounds = TaskInfoCompat.getMaxBoundsOrNull(focusedRootTaskInfo)
         val boundsText = formatRect(bounds)
@@ -457,10 +459,11 @@ class Monitor(
         return "[${rect.left},${rect.top},${rect.right},${rect.bottom}]"
     }
 
-    private fun getFocusedRootTaskInfo(): RootTaskInfo = try {
+    private fun getFocusedRootTaskInfoOrNull(): RootTaskInfo? = try {
         iActivityTaskManager.getFocusedRootTaskInfo()
     } catch (e: RemoteException) {
-        throw RuntimeException("前台应用检测: 获取当前焦点 RootTask 信息失败", e)
+        LoggerX.e(tag, "前台应用检测: 获取当前焦点 RootTask 信息失败, 跳过本次前台应用更新", tr = e)
+        null
     }
 
     // 耗时操作
