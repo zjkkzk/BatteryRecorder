@@ -480,7 +480,7 @@ class Server internal constructor() : IService.Stub() {
         appConfigFile = File("${appInfo.dataDir}/shared_prefs/${SettingsConstants.PREFS_NAME}.xml")
         appPowerDataDir = File("${appInfo.dataDir}/${Constants.APP_POWER_DATA_PATH}")
 
-        appSourceDirObserver = AppSourceDirObserver(::checkAppReinstall)
+        appSourceDirObserver = AppSourceDirObserver(::onAppSourceDirChanged)
         appSourceDirObserver.startWatching()
 
         val sampler = if (SysfsSampler.init(appInfo)) SysfsSampler else DumpsysSampler()
