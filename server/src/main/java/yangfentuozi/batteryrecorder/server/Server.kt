@@ -39,6 +39,7 @@ import java.io.FileDescriptor
 import java.io.IOException
 import java.nio.file.Files
 import java.util.Scanner
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.system.exitProcess
 
 class Server internal constructor() : IService.Stub() {
@@ -55,14 +56,16 @@ class Server internal constructor() : IService.Stub() {
     private var shellPowerDataDir: File
 
     override fun stopService() {
-        Handlers.main.postDelayed({ exitProcess(0) }, 100)
+        stopServiceInternal("stopService")
     }
 
     override fun getVersion(): Int {
+        ensureAppReady("getVersion")
         return BuildConfig.VERSION
     }
 
     override fun getCurrRecordsFile(): RecordsFile? {
+        ensureAppReady("getCurrRecordsFile")
         val lastStatus = writer.lastStatus
         val file = when (lastStatus) {
             Charging -> writer.chargeDataWriter.getCurrFile(writer.chargeDataWriter.hasPendingStatusChange)
@@ -83,10 +86,12 @@ class Server internal constructor() : IService.Stub() {
     }
 
     override fun registerRecordListener(listener: IRecordListener) {
+        ensureAppReady("registerRecordListener")
         monitor.registerRecordListener(listener)
     }
 
     override fun unregisterRecordListener(listener: IRecordListener) {
+        ensureAppReady("unregisterRecordListener")
         monitor.unregisterRecordListener(listener)
     }
 
@@ -126,6 +131,7 @@ class Server internal constructor() : IService.Stub() {
     }
 
     override fun updateConfig(settings: ServerSettings) {
+        ensureAppReady("updateConfig")
         Handlers.common.post {
             applyConfigInternal(settings, "updateConfig")
         }
@@ -191,6 +197,7 @@ class Server internal constructor() : IService.Stub() {
     }
 
     override fun sync(): ParcelFileDescriptor? {
+        ensureAppReady("sync")
         writer.flushBufferBlocking()
         if (Os.getuid() == 0) {
             LoggerX.d(tag, "sync: root 模式不需要同步文件, return null")
@@ -253,6 +260,7 @@ class Server internal constructor() : IService.Stub() {
      * @return 用于读取日志目录文件流的管道读端。
      */
     override fun exportLogs(): ParcelFileDescriptor {
+        ensureAppReady("exportLogs")
         val logDir = File("${Constants.SHELL_DATA_DIR_PATH}/${Constants.SHELL_LOG_DIR_PATH}")
         LoggerX.i(tag, "exportLogs: 收到服务端日志导出请求", notWrite = true)
         LoggerX.d(tag, "exportLogs: 服务端日志目录 dir=${logDir.absolutePath}", notWrite = true)
@@ -317,6 +325,71 @@ class Server internal constructor() : IService.Stub() {
         return readEnd
     }
 
+    /**
+     * 在处理对外 IPC 之前确认 App 安装态是否仍与当前 Server 绑定的 APK 一致。
+     *
+     * @param trigger 触发本次校验的入口名称，仅用于日志定位。
+     * @return 无。
+     * @throws RemoteException 当检测到 App 已更新、重装或卸载时抛出，阻止继续执行业务 IPC。
+     */
+    private fun ensureAppReady(trigger: String) {
+        if (!checkAppReinstall(trigger)) {
+            throw RemoteException("$trigger: App 已更新、重装或卸载")
+        }
+    }
+
+    /**
+     * 检查当前 App 是否已更新、重装或卸载，并在命中变化时复用既有处理链路。
+     *
+     * @param trigger 触发本次检查的入口名称，仅用于日志定位。
+     * @return `true` 表示当前安装态未变化，可以继续执行；`false` 表示已转交
+     * `onAppSourceDirChanged(...)` 处理，不应继续当前业务。
+     */
+    private fun checkAppReinstall(trigger: String): Boolean {
+        val appInfo = try {
+            PackageManagerCompat.getApplicationInfo(Constants.APP_PACKAGE_NAME, 0L, 0)
+        } catch (e: RemoteException) {
+            LoggerX.e(tag, "$trigger: 查询 App 安装信息失败, 跳过本次重装检查", tr = e)
+            return true
+        } catch (e: PackageManager.NameNotFoundException) {
+            LoggerX.w(tag, "$trigger: 查询 App 安装信息失败, 按已卸载处理", tr = e)
+            onAppSourceDirChanged(null)
+            return false
+        }
+
+        if (appInfo.sourceDir == null || appInfo.nativeLibraryDir == null) {
+            LoggerX.w(
+                tag,
+                "$trigger: App 安装信息不完整, 按已卸载处理 sourceDir=${appInfo.sourceDir} nativeLibraryDir=${appInfo.nativeLibraryDir}"
+            )
+            onAppSourceDirChanged(appInfo)
+            return false
+        }
+
+        val recordedSourceDir = Global.appSourceDir
+        val sourceDirExists = File(recordedSourceDir).exists()
+        if (appInfo.sourceDir != recordedSourceDir || !sourceDirExists) {
+            LoggerX.i(
+                tag,
+                "$trigger: 检测到 App 安装态变化 oldSourceDir=$recordedSourceDir newSourceDir=${appInfo.sourceDir} oldExists=$sourceDirExists"
+            )
+            onAppSourceDirChanged(appInfo)
+            return false
+        }
+        return true
+    }
+
+    /**
+     * 直接安排当前 Server 进程退出，不执行 IPC 入口的安装态检查。
+     *
+     * @param trigger 触发本次退出的来源，仅用于日志定位。
+     * @return 无。
+     */
+    private fun stopServiceInternal(trigger: String) {
+        LoggerX.i(tag, "$trigger: 安排退出当前 Server 进程")
+        Handlers.main.postDelayed({ exitProcess(0) }, 100)
+    }
+
     private fun onStop() {
         monitor.stop()
 
@@ -357,14 +430,13 @@ class Server internal constructor() : IService.Stub() {
         }
     }
 
-    private var onAppSourceDirChangedInvoked = false
+    private val onAppSourceDirChangedInvoked = AtomicBoolean(false)
 
     private fun onAppSourceDirChanged(appInfo: ApplicationInfo?) {
-        if (onAppSourceDirChangedInvoked) return
-        onAppSourceDirChangedInvoked = true
+        if (!onAppSourceDirChangedInvoked.compareAndSet(false, true)) return
         if (appInfo == null || appInfo.sourceDir == null || appInfo.nativeLibraryDir == null) {
             LoggerX.i(tag, "onAppSourceDirChanged: App 已被卸载, 退出服务")
-            stopService()
+            stopServiceInternal("onAppSourceDirChanged")
         } else {
             LoggerX.i(tag, "onAppSourceDirChanged: App 已被更新, 重启服务")
             ProcessBuilder(appInfo.nativeLibraryDir + "/libstarter.so").start()
@@ -408,7 +480,7 @@ class Server internal constructor() : IService.Stub() {
         appConfigFile = File("${appInfo.dataDir}/shared_prefs/${SettingsConstants.PREFS_NAME}.xml")
         appPowerDataDir = File("${appInfo.dataDir}/${Constants.APP_POWER_DATA_PATH}")
 
-        appSourceDirObserver = AppSourceDirObserver(::onAppSourceDirChanged)
+        appSourceDirObserver = AppSourceDirObserver(::checkAppReinstall)
         appSourceDirObserver.startWatching()
 
         val sampler = if (SysfsSampler.init(appInfo)) SysfsSampler else DumpsysSampler()
@@ -499,7 +571,11 @@ class Server internal constructor() : IService.Stub() {
         LoggerX.i(tag, "init: Monitor 已启动, 进入消息循环")
 
         LoggerX.i(tag, "init: 初始化 BinderSender")
-        BinderSender(::sendBinder)
+        BinderSender {
+            if (checkAppReinstall("BinderSender")) {
+                sendBinder()
+            }
+        }
 
         Thread({
             Thread.sleep(1000)
@@ -532,7 +608,7 @@ class Server internal constructor() : IService.Stub() {
                 var line: String
                 while ((scanner.nextLine().also { line = it }) != null) {
                     if (line.trim { it <= ' ' } == "exit") {
-                        stopService()
+                        stopServiceInternal("InputHandler")
                     }
                 }
                 scanner.close()
