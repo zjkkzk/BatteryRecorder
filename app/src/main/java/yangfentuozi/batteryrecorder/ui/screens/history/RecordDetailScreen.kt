@@ -233,6 +233,7 @@ fun RecordDetailScreen(
                             onClick = {
                                 coroutineScope.launch {
                                     isSavingLongScreenshot = true
+                                    kotlinx.coroutines.delay(300)
                                     try {
                                         val screenshotBitmap = captureLongScreenshot(
                                             scrollState = detailScrollState,
@@ -446,7 +447,11 @@ fun RecordDetailScreen(
 
                 if (detailState?.type == BatteryStatus.Discharging) {
                     AppDetailSection(
-                        entries = recordAppDetailEntries,
+                        entries = if (isSavingLongScreenshot) {
+                            recordAppDetailEntries.filter { it.durationMs >= 120_000L }
+                        } else {
+                            recordAppDetailEntries
+                        },
                         displayConfig = appDetailDisplayConfig
                     )
                 }
