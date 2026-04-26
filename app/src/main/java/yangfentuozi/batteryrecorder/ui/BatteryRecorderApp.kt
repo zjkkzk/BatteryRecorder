@@ -1,6 +1,7 @@
 package yangfentuozi.batteryrecorder.ui
 
 import android.content.Context
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -14,18 +15,22 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.edit
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharedFlow
 import yangfentuozi.batteryrecorder.BuildConfig
 import yangfentuozi.batteryrecorder.R
+import yangfentuozi.batteryrecorder.ipc.Service
 import yangfentuozi.batteryrecorder.shared.util.LoggerX
 import yangfentuozi.batteryrecorder.ui.dialog.home.DocsIntroDialog
+import yangfentuozi.batteryrecorder.ui.dialog.home.UpdateDialog
 import yangfentuozi.batteryrecorder.ui.guide.KEY_STARTUP_GUIDE_COMPLETED
 import yangfentuozi.batteryrecorder.ui.guide.STARTUP_PROMPT_PREFS
-import yangfentuozi.batteryrecorder.ui.dialog.home.UpdateDialog
 import yangfentuozi.batteryrecorder.ui.guide.StartupGuideScreen
+import yangfentuozi.batteryrecorder.ui.model.displayName
 import yangfentuozi.batteryrecorder.ui.navigation.BatteryRecorderNavHost
+import yangfentuozi.batteryrecorder.ui.navigation.NavRoute
 import yangfentuozi.batteryrecorder.ui.viewmodel.MainViewModel
 import yangfentuozi.batteryrecorder.ui.viewmodel.SettingsViewModel
-import yangfentuozi.batteryrecorder.ui.model.displayName
 import yangfentuozi.batteryrecorder.utils.AppUpdate
 import yangfentuozi.batteryrecorder.utils.UpdateUtils
 
@@ -35,7 +40,8 @@ private const val KEY_DOCS_INTRO_SHOWN = "docs_intro_shown"
 @Composable
 fun BatteryRecorderApp(
     mainViewModel: MainViewModel = viewModel(),
-    settingsViewModel: SettingsViewModel = viewModel()
+    settingsViewModel: SettingsViewModel = viewModel(),
+    openCurrentRecordDetailEvent: SharedFlow<Unit>
 ) {
     val context = LocalContext.current
     val appSettings by settingsViewModel.appSettings.collectAsState()
@@ -117,6 +123,26 @@ fun BatteryRecorderApp(
             mainViewModel = mainViewModel,
             settingsViewModel = settingsViewModel
         )
+        LaunchedEffect(Unit) {
+            openCurrentRecordDetailEvent.collect {
+                val record = run {
+                    repeat(100) {
+                        val r = Service.service?.currRecordsFile
+                        if (r != null) return@run r
+                        delay(100)
+                    }
+                    null
+                } ?: return@collect
+
+
+                navController.navigate(
+                    NavRoute.RecordDetail.createRoute(
+                        record.type.dataDirName,
+                        Uri.encode(record.name)
+                    )
+                )
+            }
+        }
     }
 
     pendingUpdate?.let { update ->

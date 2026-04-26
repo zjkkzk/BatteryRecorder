@@ -4,6 +4,9 @@ import android.app.INotificationManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.ComponentName
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.Icon
@@ -15,6 +18,7 @@ import yangfentuozi.batteryrecorder.shared.config.SettingsConstants
 import yangfentuozi.batteryrecorder.shared.util.LoggerX
 import yangfentuozi.hiddenapi.compat.NotificationManagerCompat
 import java.util.Locale
+
 
 class LocalNotificationUtil(
     @Volatile
@@ -166,6 +170,23 @@ class LocalNotificationUtil(
             .setOnlyAlertOnce(true)
             .setOngoing(true)
             .setAutoCancel(false)
+            .setContentIntent(pendingIntent)
+
+    private val pendingIntent by lazy {
+        PendingIntent.getActivity(
+            context,
+            0,
+            Intent().apply {
+                component = ComponentName(
+                    Constants.APP_PACKAGE_NAME,
+                    "yangfentuozi.batteryrecorder.ui.MainActivity"
+                )
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("open_current_record_detail", true)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
 
     private val reusableBuilder by lazy(LazyThreadSafetyMode.NONE) { createBaseBuilder() }
 
