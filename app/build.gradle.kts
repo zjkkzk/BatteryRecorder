@@ -28,7 +28,7 @@ if (ksFile.canRead()) {
 }
 
 val gitCommitCountInt = rootProject.extra["gitCommitCountInt"] as Int
-val baseVersionName = "2.1.0"
+val baseVersionName = "2.1.1"
 val versionNameSuffixProvider = providers.gradleProperty("versionNameSuffix")
     .orElse("-alpha$gitCommitCountInt")
 val finalVersionNameProvider = versionNameSuffixProvider.map { suffix ->
